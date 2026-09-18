@@ -6,9 +6,11 @@ from PySide6.QtCore import (
 )
 from PySide6.QtWidgets import (
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -41,12 +43,10 @@ from app.ui.image_cache import (
 
 class QueueCard(QFrame):
     """
-    One listing card in Today's Queue.
+    Compact card for one listing in Today's Queue.
 
-    Photo metadata may be supplied by DailyQueuePage so a
-    separate database query is not required for every card.
-
-    Thumbnail pixmaps are cached in memory.
+    Photo metadata can be supplied by the page so the UI
+    does not perform one database photo query per card.
     """
 
     prepare_requested = Signal(int)
@@ -65,21 +65,18 @@ class QueueCard(QFrame):
         )
 
         self.item = item
-
-        self.listing = (
-            item.listing
-        )
-
-        self._preloaded_photos = (
-            photos
-        )
+        self.listing = item.listing
+        self._preloaded_photos = photos
 
         self.setObjectName(
             "queueCard"
         )
 
+        self.setMinimumHeight(
+            142
+        )
+
         self._build_ui()
-        self._apply_styles()
 
     def _build_ui(
         self,
@@ -89,31 +86,107 @@ class QueueCard(QFrame):
         )
 
         layout.setContentsMargins(
-            18,
-            18,
-            18,
-            18,
+            14,
+            14,
+            14,
+            14,
         )
 
         layout.setSpacing(
-            20
-        )
-
-        photo_label = (
-            self._create_photo_label()
+            16
         )
 
         layout.addWidget(
-            photo_label
+            self._create_photo_label()
         )
 
         details = QVBoxLayout()
 
         details.setSpacing(
-            6
+            5
         )
 
-        title_row = QHBoxLayout()
+        details.addLayout(
+            self._create_title_row()
+        )
+
+        details.addLayout(
+            self._create_badge_row()
+        )
+
+        metadata_text = (
+            self._build_metadata_text()
+        )
+
+        if metadata_text:
+            metadata = QLabel(
+                metadata_text
+            )
+
+            metadata.setObjectName(
+                "metadataText"
+            )
+
+            metadata.setWordWrap(
+                True
+            )
+
+            details.addWidget(
+                metadata
+            )
+
+        history = QLabel(
+            self._build_history_text()
+        )
+
+        history.setObjectName(
+            "queueDetails"
+        )
+
+        history.setWordWrap(
+            True
+        )
+
+        details.addWidget(
+            history
+        )
+
+        if self.listing.isbn:
+            isbn = QLabel(
+                f"ISBN: {self.listing.isbn}"
+            )
+
+            isbn.setObjectName(
+                "dateText"
+            )
+
+            isbn.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+
+            details.addWidget(
+                isbn
+            )
+
+        details.addStretch()
+
+        layout.addLayout(
+            details,
+            1,
+        )
+
+        layout.addLayout(
+            self._create_actions()
+        )
+
+    def _create_title_row(
+        self,
+    ) -> QHBoxLayout:
+        layout = QHBoxLayout()
+
+        layout.setSpacing(
+            12
+        )
 
         title = QLabel(
             self.listing.title
@@ -138,206 +211,159 @@ class QueueCard(QFrame):
             "queuePrice"
         )
 
-        title_row.addWidget(
+        price.setAlignment(
+            Qt.AlignmentFlag.AlignRight
+            | Qt.AlignmentFlag.AlignTop
+        )
+
+        layout.addWidget(
             title,
             1,
         )
 
-        title_row.addWidget(
+        layout.addWidget(
             price
         )
 
-        details.addLayout(
-            title_row
+        return layout
+
+    def _create_badge_row(
+        self,
+    ) -> QHBoxLayout:
+        layout = QHBoxLayout()
+
+        layout.setSpacing(
+            6
+        )
+
+        priority = QLabel(
+            (
+                self.listing.priority.value.capitalize()
+                + " priority"
+            )
+        )
+
+        priority.setObjectName(
+            "priorityBadge"
+        )
+
+        layout.addWidget(
+            priority
         )
 
         if self.item.never_relisted:
-            last_relisted = (
+            never_relisted = QLabel(
                 "Never relisted"
             )
 
-        else:
-            last_relisted = (
-                "Last relisted: "
-                f"{self.listing.last_relisted_date:%d %b %Y}"
+            never_relisted.setObjectName(
+                "warningBadge"
             )
 
-        information = QLabel(
-            (
-                f"{last_relisted}\n"
-                f"Days since refresh: "
-                f"{self.item.days_since_relisted}\n"
-                f"Relist count: "
-                f"{self.listing.number_of_times_relisted}\n"
-                f"Priority: "
-                f"{self.listing.priority.value.capitalize()}"
+            layout.addWidget(
+                never_relisted
             )
-        )
 
-        information.setObjectName(
-            "queueDetails"
-        )
+        layout.addStretch()
 
-        details.addWidget(
-            information
-        )
+        return layout
+
+    def _build_metadata_text(
+        self,
+    ) -> str:
+        values: list[str] = []
 
         if self.listing.category:
-            category_text = (
+            category = (
                 self.listing.category
             )
 
             if self.listing.subcategory:
-                category_text += (
-                    " → "
+                category += (
+                    " › "
                     f"{self.listing.subcategory}"
                 )
 
-            category_label = QLabel(
-                category_text
+            values.append(
+                category
             )
 
-            category_label.setObjectName(
-                "queueMetadata"
+        if self.listing.brand:
+            values.append(
+                f"Brand: {self.listing.brand}"
             )
 
-            details.addWidget(
-                category_label
+        if self.listing.size:
+            values.append(
+                f"Size: {self.listing.size}"
             )
 
-        if self.listing.isbn:
-            isbn_label = QLabel(
+        if self.listing.condition:
+            values.append(
                 (
-                    "ISBN: "
-                    f"{self.listing.isbn}"
+                    "Condition: "
+                    f"{self.listing.condition}"
                 )
             )
 
-            isbn_label.setObjectName(
-                "queueMetadata"
+        return "   •   ".join(
+            values
+        )
+
+    def _build_history_text(
+        self,
+    ) -> str:
+        if self.item.never_relisted:
+            age_text = (
+                f"{self.item.days_since_relisted} "
+                "days since original listing"
             )
 
-            isbn_label.setTextInteractionFlags(
-                Qt.TextInteractionFlag.TextSelectableByMouse
-            )
-
-            details.addWidget(
-                isbn_label
-            )
-
-        details.addStretch()
-
-        layout.addLayout(
-            details,
-            1,
-        )
-
-        buttons = QVBoxLayout()
-
-        buttons.setSpacing(
-            8
-        )
-
-        prepare_button = QPushButton(
-            "PREPARE LISTING"
-        )
-
-        prepare_button.setObjectName(
-            "primaryQueueButton"
-        )
-
-        prepare_button.setCursor(
-            Qt.CursorShape.PointingHandCursor
-        )
-
-        prepare_button.clicked.connect(
-            lambda: (
-                self.prepare_requested.emit(
-                    self.listing.id
+        else:
+            if (
+                self.listing.last_relisted_date
+                is not None
+            ):
+                date_text = (
+                    self.listing
+                    .last_relisted_date
+                    .strftime(
+                        "%d %b %Y"
+                    )
                 )
-            )
-        )
 
-        edit_button = QPushButton(
-            "EDIT LISTING"
-        )
-
-        edit_button.setObjectName(
-            "secondaryQueueButton"
-        )
-
-        edit_button.setCursor(
-            Qt.CursorShape.PointingHandCursor
-        )
-
-        edit_button.clicked.connect(
-            lambda: (
-                self.edit_requested.emit(
-                    self.listing.id
+                age_text = (
+                    f"Last relisted {date_text}"
+                    " · "
+                    f"{self.item.days_since_relisted} "
+                    "days ago"
                 )
-            )
-        )
 
-        relisted_button = QPushButton(
-            "MARK AS RELISTED"
-        )
-
-        relisted_button.setObjectName(
-            "secondaryQueueButton"
-        )
-
-        relisted_button.setCursor(
-            Qt.CursorShape.PointingHandCursor
-        )
-
-        relisted_button.clicked.connect(
-            lambda: (
-                self.relisted_requested.emit(
-                    self.listing.id
+            else:
+                age_text = (
+                    f"{self.item.days_since_relisted} "
+                    "days since last refresh"
                 )
+
+        count = (
+            self.listing
+            .number_of_times_relisted
+        )
+
+        if count == 1:
+            count_text = (
+                "Relisted once"
             )
-        )
 
-        skip_button = QPushButton(
-            "SKIP TODAY"
-        )
-
-        skip_button.setObjectName(
-            "secondaryQueueButton"
-        )
-
-        skip_button.setCursor(
-            Qt.CursorShape.PointingHandCursor
-        )
-
-        skip_button.clicked.connect(
-            lambda: (
-                self.skip_requested.emit(
-                    self.listing.id
-                )
+        else:
+            count_text = (
+                f"Relisted {count} times"
             )
-        )
 
-        buttons.addWidget(
-            prepare_button
-        )
-
-        buttons.addWidget(
-            edit_button
-        )
-
-        buttons.addWidget(
-            relisted_button
-        )
-
-        buttons.addWidget(
-            skip_button
-        )
-
-        buttons.addStretch()
-
-        layout.addLayout(
-            buttons
+        return (
+            f"{age_text}"
+            "   •   "
+            f"{count_text}"
         )
 
     def _create_photo_label(
@@ -346,8 +372,8 @@ class QueueCard(QFrame):
         photo_label = QLabel()
 
         photo_label.setFixedSize(
-            150,
-            150,
+            112,
+            112,
         )
 
         photo_label.setAlignment(
@@ -400,10 +426,12 @@ class QueueCard(QFrame):
                 )
             )
 
-            pixmap = get_scaled_pixmap(
-                thumbnail,
-                140,
-                140,
+            pixmap = (
+                get_scaled_pixmap(
+                    thumbnail,
+                    104,
+                    104,
+                )
             )
 
             if pixmap.isNull():
@@ -424,71 +452,126 @@ class QueueCard(QFrame):
 
         return photo_label
 
-    def _apply_styles(
+    def _create_actions(
         self,
-    ) -> None:
-        self.setStyleSheet(
-            """
-            #queueCard {
-                background-color: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 10px;
-            }
+    ) -> QVBoxLayout:
+        layout = QVBoxLayout()
 
-            #queuePhoto {
-                background-color: #f3f4f6;
-                color: #9ca3af;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-            }
-
-            #queueTitle,
-            #queuePrice {
-                color: #111827;
-                font-size: 18px;
-                font-weight: 700;
-            }
-
-            #queueDetails {
-                color: #4b5563;
-                font-size: 13px;
-            }
-
-            #queueMetadata {
-                color: #6b7280;
-                font-size: 12px;
-                font-weight: 600;
-            }
-
-            #primaryQueueButton {
-                background-color: #1f2937;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 9px 13px;
-                min-width: 150px;
-                font-weight: 600;
-            }
-
-            #primaryQueueButton:hover {
-                background-color: #374151;
-            }
-
-            #secondaryQueueButton {
-                background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 9px 13px;
-                min-width: 150px;
-                font-weight: 600;
-            }
-
-            #secondaryQueueButton:hover {
-                background-color: #f3f4f6;
-            }
-            """
+        layout.setSpacing(
+            6
         )
+
+        prepare_button = QPushButton(
+            "PREPARE LISTING"
+        )
+
+        prepare_button.setObjectName(
+            "primaryQueueButton"
+        )
+
+        prepare_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        prepare_button.setMinimumWidth(
+            145
+        )
+
+        prepare_button.clicked.connect(
+            lambda:
+            self.prepare_requested.emit(
+                self.listing.id
+            )
+        )
+
+        edit_button = QPushButton(
+            "EDIT LISTING"
+        )
+
+        edit_button.setObjectName(
+            "secondaryQueueButton"
+        )
+
+        edit_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        edit_button.setMinimumWidth(
+            145
+        )
+
+        edit_button.clicked.connect(
+            lambda:
+            self.edit_requested.emit(
+                self.listing.id
+            )
+        )
+
+        relisted_button = QPushButton(
+            "MARK RELISTED"
+        )
+
+        relisted_button.setObjectName(
+            "secondaryQueueButton"
+        )
+
+        relisted_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        relisted_button.setMinimumWidth(
+            145
+        )
+
+        relisted_button.clicked.connect(
+            lambda:
+            self.relisted_requested.emit(
+                self.listing.id
+            )
+        )
+
+        skip_button = QPushButton(
+            "SKIP TODAY"
+        )
+
+        skip_button.setObjectName(
+            "secondaryQueueButton"
+        )
+
+        skip_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        skip_button.setMinimumWidth(
+            145
+        )
+
+        skip_button.clicked.connect(
+            lambda:
+            self.skip_requested.emit(
+                self.listing.id
+            )
+        )
+
+        layout.addWidget(
+            prepare_button
+        )
+
+        layout.addWidget(
+            edit_button
+        )
+
+        layout.addWidget(
+            relisted_button
+        )
+
+        layout.addWidget(
+            skip_button
+        )
+
+        layout.addStretch()
+
+        return layout
 
 
 class DailyQueuePage(QWidget):
@@ -536,72 +619,13 @@ class DailyQueuePage(QWidget):
             14
         )
 
-        header = QFrame()
-
-        header.setObjectName(
-            "queueHeader"
+        self._build_summary(
+            layout
         )
 
-        header_layout = QHBoxLayout(
-            header
+        self.message_label = QLabel(
+            "Loading today's queue..."
         )
-
-        self.progress_label = QLabel()
-
-        self.progress_label.setObjectName(
-            "queueProgress"
-        )
-
-        self.rule_label = QLabel(
-            (
-                "Minimum age: "
-                f"{self.minimum_age_days} days"
-            )
-        )
-
-        self.rule_label.setObjectName(
-            "queueRule"
-        )
-
-        refresh_button = QPushButton(
-            "REFRESH"
-        )
-
-        refresh_button.setObjectName(
-            "queueRefreshButton"
-        )
-
-        refresh_button.setCursor(
-            Qt.CursorShape.PointingHandCursor
-        )
-
-        refresh_button.clicked.connect(
-            self.refresh
-        )
-
-        header_layout.addWidget(
-            self.progress_label
-        )
-
-        header_layout.addSpacing(
-            20
-        )
-
-        header_layout.addWidget(
-            self.rule_label
-        )
-
-        header_layout.addStretch()
-
-        header_layout.addWidget(
-            refresh_button
-        )
-
-        layout.addWidget(
-            header
-        )
-
-        self.message_label = QLabel()
 
         self.message_label.setWordWrap(
             True
@@ -645,7 +669,7 @@ class DailyQueuePage(QWidget):
         )
 
         self.cards_layout.setSpacing(
-            12
+            10
         )
 
         self.cards_layout.addStretch()
@@ -659,9 +683,141 @@ class DailyQueuePage(QWidget):
             1,
         )
 
-        self._apply_page_styles()
+        # Do not refresh here.
+        #
+        # MainWindow applies the user's saved daily limit
+        # and minimum age immediately after constructing the
+        # page, then performs the first refresh once.
+        #
+        # This avoids loading the queue twice.
 
-        self.refresh()
+    def _build_summary(
+        self,
+        root_layout: QVBoxLayout,
+    ) -> None:
+        summary = QFrame()
+
+        summary.setObjectName(
+            "queueHeader"
+        )
+
+        summary_layout = QVBoxLayout(
+            summary
+        )
+
+        summary_layout.setContentsMargins(
+            18,
+            14,
+            18,
+            14,
+        )
+
+        summary_layout.setSpacing(
+            9
+        )
+
+        top_row = QHBoxLayout()
+
+        heading = QLabel(
+            "TODAY'S PROGRESS"
+        )
+
+        heading.setObjectName(
+            "panelHeading"
+        )
+
+        self.progress_label = QLabel(
+            "Completed: —"
+        )
+
+        self.progress_label.setObjectName(
+            "queueProgress"
+        )
+
+        self.ready_label = QLabel(
+            "Ready: —"
+        )
+
+        self.ready_label.setObjectName(
+            "queueProgress"
+        )
+
+        self.rule_label = QLabel(
+            (
+                "Minimum age: "
+                f"{self.minimum_age_days} days"
+            )
+        )
+
+        self.rule_label.setObjectName(
+            "queueRule"
+        )
+
+        top_row.addWidget(
+            heading
+        )
+
+        top_row.addSpacing(
+            20
+        )
+
+        top_row.addWidget(
+            self.progress_label
+        )
+
+        top_row.addSpacing(
+            16
+        )
+
+        top_row.addWidget(
+            self.ready_label
+        )
+
+        top_row.addStretch()
+
+        top_row.addWidget(
+            self.rule_label
+        )
+
+        summary_layout.addLayout(
+            top_row
+        )
+
+        self.progress_bar = (
+            QProgressBar()
+        )
+
+        self.progress_bar.setTextVisible(
+            False
+        )
+
+        self.progress_bar.setMinimumHeight(
+            8
+        )
+
+        self.progress_bar.setMaximumHeight(
+            8
+        )
+
+        self.progress_bar.setRange(
+            0,
+            max(
+                1,
+                self.daily_limit,
+            ),
+        )
+
+        self.progress_bar.setValue(
+            0
+        )
+
+        summary_layout.addWidget(
+            self.progress_bar
+        )
+
+        root_layout.addWidget(
+            summary
+        )
 
     def refresh(
         self,
@@ -669,9 +825,8 @@ class DailyQueuePage(QWidget):
         """
         Refresh today's queue.
 
-        Photo metadata is loaded with one batch database query.
-        The previous cards remain visible until fresh queue data
-        has been obtained.
+        Queue data is retrieved first, then all photo metadata
+        is loaded in one batch query.
         """
         try:
             snapshot = get_today_queue(
@@ -685,7 +840,11 @@ class DailyQueuePage(QWidget):
 
         except Exception as exc:
             self.progress_label.setText(
-                "Queue unavailable"
+                "Completed: unavailable"
+            )
+
+            self.ready_label.setText(
+                "Ready: unavailable"
             )
 
             self.message_label.setText(
@@ -694,12 +853,31 @@ class DailyQueuePage(QWidget):
 
             return
 
+        configured_limit = max(
+            1,
+            snapshot.configured_limit,
+        )
+
+        completed = min(
+            snapshot.completed_count,
+            configured_limit,
+        )
+
+        ready_count = len(
+            snapshot.queued_items
+        )
+
         self.progress_label.setText(
             (
-                "Completed today: "
-                f"{snapshot.completed_count}/"
+                "Completed: "
+                f"{snapshot.completed_count}"
+                "/"
                 f"{snapshot.configured_limit}"
             )
+        )
+
+        self.ready_label.setText(
+            f"Ready: {ready_count}"
         )
 
         self.rule_label.setText(
@@ -709,12 +887,20 @@ class DailyQueuePage(QWidget):
             )
         )
 
+        self.progress_bar.setRange(
+            0,
+            configured_limit,
+        )
+
+        self.progress_bar.setValue(
+            completed
+        )
+
         if snapshot.is_complete:
             self.message_label.setText(
                 (
-                    "Today's relisting queue is complete. "
-                    "No additional listings will be generated "
-                    "until the next calendar day."
+                    "Today's relisting target is complete. "
+                    "No more listings need to be prepared today."
                 )
             )
 
@@ -727,8 +913,7 @@ class DailyQueuePage(QWidget):
 
                 self._show_empty_message(
                     (
-                        "Today's relisting queue "
-                        "is complete."
+                        "Today's queue is complete."
                     )
                 )
 
@@ -744,8 +929,8 @@ class DailyQueuePage(QWidget):
         if not snapshot.queued_items:
             self.message_label.setText(
                 (
-                    "There are currently no "
-                    "eligible listings."
+                    "There are currently no eligible "
+                    "listings for today's queue."
                 )
             )
 
@@ -774,9 +959,7 @@ class DailyQueuePage(QWidget):
 
         listing_ids = [
             item.listing.id
-            for item in (
-                snapshot.queued_items
-            )
+            for item in snapshot.queued_items
         ]
 
         try:
@@ -787,14 +970,23 @@ class DailyQueuePage(QWidget):
             )
 
         except Exception:
-            # Queue functionality should continue even if
-            # the batch photo lookup fails.
+            # Queue actions should still work even when
+            # the optimized photo lookup fails.
             photos_by_listing = None
+
+        remaining = max(
+            0,
+            (
+                snapshot.configured_limit
+                - snapshot.completed_count
+            ),
+        )
 
         self.message_label.setText(
             (
-                f"{len(snapshot.queued_items)} listing(s) "
-                "are ready for manual relisting."
+                f"{ready_count} listing(s) ready. "
+                f"{remaining} relist(s) remain "
+                "before today's configured limit is reached."
             )
         )
 
@@ -864,7 +1056,8 @@ class DailyQueuePage(QWidget):
             "Skip Today",
             (
                 "Skip this listing for today?\n\n"
-                "It will not count toward the daily limit."
+                "It will not count toward your "
+                "completed daily relist limit."
             ),
             (
                 QMessageBox.StandardButton.Yes
@@ -912,7 +1105,9 @@ class DailyQueuePage(QWidget):
             "Mark as Relisted",
             (
                 "Have you successfully published this "
-                "listing on Vinted?"
+                "listing on Vinted?\n\n"
+                "Only confirm this after you have manually "
+                "completed the relisting."
             ),
             (
                 QMessageBox.StandardButton.Yes
@@ -962,8 +1157,8 @@ class DailyQueuePage(QWidget):
             self,
             "Relisting Recorded",
             (
-                "Relisting recorded "
-                "successfully."
+                "The listing has been recorded "
+                "as successfully relisted."
             ),
         )
 
@@ -999,6 +1194,10 @@ class DailyQueuePage(QWidget):
     def _clear_cards(
         self,
     ) -> None:
+        """
+        Delete existing queue cards while keeping the
+        final stretch item.
+        """
         while (
             self.cards_layout.count()
             > 1
@@ -1013,50 +1212,3 @@ class DailyQueuePage(QWidget):
 
             if widget is not None:
                 widget.deleteLater()
-
-    def _apply_page_styles(
-        self,
-    ) -> None:
-        self.setStyleSheet(
-            self.styleSheet()
-            + """
-            #queueHeader {
-                background-color: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-            }
-
-            #queueProgress {
-                color: #111827;
-                font-weight: 700;
-            }
-
-            #queueRule,
-            #queueMessage {
-                color: #6b7280;
-                font-size: 13px;
-            }
-
-            #queueRefreshButton {
-                background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px 14px;
-                font-weight: 600;
-            }
-
-            #queueRefreshButton:hover {
-                background-color: #f3f4f6;
-            }
-
-            #queueEmptyState {
-                background-color: white;
-                color: #6b7280;
-                border: 1px solid #e5e7eb;
-                border-radius: 10px;
-                padding: 35px;
-                font-size: 15px;
-            }
-            """
-        )

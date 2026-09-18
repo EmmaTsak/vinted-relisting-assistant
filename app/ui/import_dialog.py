@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import (
+    Qt,
+    Signal,
+)
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -23,7 +27,17 @@ from app.services.import_service import (
 
 
 class ImportListingsDialog(QDialog):
+    """
+    Generic CSV / JSON listing importer.
+
+    Important:
+    This importer does not have the Vinted item-ID duplicate
+    protection used by the dedicated Vinted data importer.
+    """
+
     import_completed = Signal(int)
+
+    CONTROL_HEIGHT = 40
 
     def __init__(
         self,
@@ -36,20 +50,25 @@ class ImportListingsDialog(QDialog):
         self.selected_file: Path | None = None
 
         self.setWindowTitle(
-            "Import Listings"
+            "Import CSV / JSON"
+        )
+
+        self.setModal(
+            True
         )
 
         self.resize(
-            720,
-            620,
+            740,
+            650,
         )
 
         self.setMinimumSize(
-            640,
-            540,
+            660,
+            560,
         )
 
         self._build_ui()
+
         self._apply_styles()
 
     def _build_ui(
@@ -70,28 +89,31 @@ class ImportListingsDialog(QDialog):
             14
         )
 
+        # -------------------------------------------------
+        # Header
+        # -------------------------------------------------
+
         heading = QLabel(
-            "Import Existing Listings"
+            "Import CSV / JSON"
         )
 
         heading.setObjectName(
-            "dialogHeading"
+            "preparationHeading"
         )
 
         description = QLabel(
             (
-                "Choose a local CSV or JSON file "
-                "containing your existing listing "
-                "information and optional photo paths."
+                "Import listings from your own structured "
+                "CSV or JSON file."
             )
+        )
+
+        description.setObjectName(
+            "informationText"
         )
 
         description.setWordWrap(
             True
-        )
-
-        description.setObjectName(
-            "dialogSubtitle"
         )
 
         layout.addWidget(
@@ -102,19 +124,48 @@ class ImportListingsDialog(QDialog):
             description
         )
 
+        # -------------------------------------------------
+        # File selection
+        # -------------------------------------------------
+
+        file_section = QFrame()
+
+        file_section.setObjectName(
+            "informationBox"
+        )
+
+        file_layout = QVBoxLayout(
+            file_section
+        )
+
+        file_layout.setContentsMargins(
+            16,
+            14,
+            16,
+            14,
+        )
+
+        file_layout.setSpacing(
+            9
+        )
+
         file_title = QLabel(
-            "Selected file"
+            "IMPORT FILE"
         )
 
         file_title.setObjectName(
-            "sectionLabel"
+            "sectionHeading"
         )
 
-        layout.addWidget(
+        file_layout.addWidget(
             file_title
         )
 
         file_row = QHBoxLayout()
+
+        file_row.setSpacing(
+            8
+        )
 
         self.file_input = QLineEdit()
 
@@ -123,7 +174,11 @@ class ImportListingsDialog(QDialog):
         )
 
         self.file_input.setPlaceholderText(
-            "No file selected"
+            "Choose a .csv or .json file"
+        )
+
+        self.file_input.setMinimumHeight(
+            self.CONTROL_HEIGHT
         )
 
         browse_button = QPushButton(
@@ -132,6 +187,14 @@ class ImportListingsDialog(QDialog):
 
         browse_button.setObjectName(
             "secondaryButton"
+        )
+
+        browse_button.setMinimumHeight(
+            self.CONTROL_HEIGHT
+        )
+
+        browse_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
         )
 
         browse_button.clicked.connect(
@@ -147,7 +210,7 @@ class ImportListingsDialog(QDialog):
             browse_button
         )
 
-        layout.addLayout(
+        file_layout.addLayout(
             file_row
         )
 
@@ -156,40 +219,102 @@ class ImportListingsDialog(QDialog):
         )
 
         self.status_label.setObjectName(
-            "statusText"
+            "informationText"
+        )
+
+        self.status_label.setWordWrap(
+            True
+        )
+
+        file_layout.addWidget(
+            self.status_label
         )
 
         layout.addWidget(
-            self.status_label
+            file_section
+        )
+
+        # -------------------------------------------------
+        # Format information
+        # -------------------------------------------------
+
+        format_section = QFrame()
+
+        format_section.setObjectName(
+            "informationBox"
+        )
+
+        format_layout = QVBoxLayout(
+            format_section
+        )
+
+        format_layout.setContentsMargins(
+            16,
+            14,
+            16,
+            14,
+        )
+
+        format_layout.setSpacing(
+            7
+        )
+
+        format_title = QLabel(
+            "FORMAT INFORMATION"
+        )
+
+        format_title.setObjectName(
+            "sectionHeading"
         )
 
         information = QLabel(
             (
-                "Required fields: title, price\n\n"
-                "JSON can also contain:\n"
-                "\"photos\": [\"photo1.jpg\", \"photo2.jpg\"]\n\n"
-                "Relative photo paths are resolved relative "
-                "to the JSON file. The photos are copied into "
-                "the application's own storage."
+                "Required fields:\n"
+                "• title\n"
+                "• price\n\n"
+                "JSON files can also contain a photos array:\n"
+                '\"photos\": [\"photo1.jpg\", \"photo2.jpg\"]\n\n'
+                "Relative photo paths are resolved from the "
+                "location of the JSON file. Imported photos are "
+                "copied into the assistant's own local storage."
             )
+        )
+
+        information.setObjectName(
+            "informationText"
         )
 
         information.setWordWrap(
             True
         )
 
-        information.setObjectName(
-            "infoBox"
+        information.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
         )
 
-        layout.addWidget(
+        format_layout.addWidget(
+            format_title
+        )
+
+        format_layout.addWidget(
             information
         )
 
+        layout.addWidget(
+            format_section
+        )
+
+        # -------------------------------------------------
+        # Duplicate warning
+        # -------------------------------------------------
+
         warning = QLabel(
             (
-                "Importing the same file more than once "
-                "can create duplicate listings."
+                "Generic CSV / JSON imports do not use Vinted "
+                "item-ID duplicate detection.\n\n"
+                "Importing the same file more than once may create "
+                "duplicate listings. For Vinted personal-data exports, "
+                "use IMPORT VINTED DATA EXPORT instead."
             )
         )
 
@@ -205,6 +330,22 @@ class ImportListingsDialog(QDialog):
             warning
         )
 
+        # -------------------------------------------------
+        # Results
+        # -------------------------------------------------
+
+        results_title = QLabel(
+            "IMPORT RESULTS"
+        )
+
+        results_title.setObjectName(
+            "sectionHeading"
+        )
+
+        layout.addWidget(
+            results_title
+        )
+
         self.result_output = QTextEdit()
 
         self.result_output.setReadOnly(
@@ -215,21 +356,45 @@ class ImportListingsDialog(QDialog):
             "Import results will appear here."
         )
 
+        self.result_output.setMinimumHeight(
+            150
+        )
+
         layout.addWidget(
             self.result_output,
             1,
         )
 
+        # -------------------------------------------------
+        # Footer
+        # -------------------------------------------------
+
         buttons = QHBoxLayout()
+
+        buttons.setSpacing(
+            8
+        )
 
         buttons.addStretch()
 
         close_button = QPushButton(
-            "Close"
+            "CLOSE"
         )
 
         close_button.setObjectName(
             "secondaryButton"
+        )
+
+        close_button.setMinimumHeight(
+            self.CONTROL_HEIGHT
+        )
+
+        close_button.setMinimumWidth(
+            100
+        )
+
+        close_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
         )
 
         close_button.clicked.connect(
@@ -242,6 +407,18 @@ class ImportListingsDialog(QDialog):
 
         self.import_button.setObjectName(
             "primaryButton"
+        )
+
+        self.import_button.setMinimumHeight(
+            self.CONTROL_HEIGHT
+        )
+
+        self.import_button.setMinimumWidth(
+            150
+        )
+
+        self.import_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
         )
 
         self.import_button.setEnabled(
@@ -263,6 +440,10 @@ class ImportListingsDialog(QDialog):
         layout.addLayout(
             buttons
         )
+
+    # =====================================================
+    # File selection
+    # =====================================================
 
     def _choose_file(
         self,
@@ -301,9 +482,7 @@ class ImportListingsDialog(QDialog):
             files[0]
         )
 
-        self.selected_file = (
-            path
-        )
+        self.selected_file = path
 
         self.file_input.setText(
             str(
@@ -312,14 +491,18 @@ class ImportListingsDialog(QDialog):
         )
 
         self.status_label.setText(
-            f"Ready to import: {path.name}"
+            (
+                "Ready to import: "
+                f"{path.name}"
+            )
         )
 
         self.result_output.setPlainText(
             (
                 "File selected successfully.\n\n"
                 f"{path}\n\n"
-                "Press IMPORT LISTINGS."
+                "Review the duplicate warning above, "
+                "then choose IMPORT LISTINGS."
             )
         )
 
@@ -327,27 +510,31 @@ class ImportListingsDialog(QDialog):
             True
         )
 
+    # =====================================================
+    # Import
+    # =====================================================
+
     def _run_import(
         self,
     ) -> None:
         if self.selected_file is None:
             return
 
-        confirmation = (
-            QMessageBox.question(
-                self,
-                "Confirm Import",
-                (
-                    "Import listings from:\n\n"
-                    f"{self.selected_file.name}\n\n"
-                    "Existing listings will not be deleted."
-                ),
-                (
-                    QMessageBox.StandardButton.Yes
-                    | QMessageBox.StandardButton.Cancel
-                ),
-                QMessageBox.StandardButton.Cancel,
-            )
+        confirmation = QMessageBox.question(
+            self,
+            "Confirm CSV / JSON Import",
+            (
+                "Import listings from:\n\n"
+                f"{self.selected_file.name}\n\n"
+                "Existing listings will not be deleted.\n\n"
+                "Important: generic CSV / JSON files do not "
+                "have Vinted item-ID duplicate protection."
+            ),
+            (
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.Cancel
+            ),
+            QMessageBox.StandardButton.Cancel,
         )
 
         if (
@@ -358,6 +545,10 @@ class ImportListingsDialog(QDialog):
 
         self.import_button.setEnabled(
             False
+        )
+
+        self.status_label.setText(
+            "Importing listings..."
         )
 
         self.result_output.setPlainText(
@@ -375,15 +566,15 @@ class ImportListingsDialog(QDialog):
             QMessageBox.critical(
                 self,
                 "Import Failed",
-                str(
-                    exc
-                ),
+                str(exc),
+            )
+
+            self.status_label.setText(
+                "Import failed."
             )
 
             self.result_output.setPlainText(
-                str(
-                    exc
-                )
+                str(exc)
             )
 
             self.import_button.setEnabled(
@@ -393,13 +584,23 @@ class ImportListingsDialog(QDialog):
             return
 
         except Exception as exc:
+            message = (
+                f"{type(exc).__name__}: "
+                f"{exc}"
+            )
+
             QMessageBox.critical(
                 self,
                 "Import Failed",
-                (
-                    f"{type(exc).__name__}: "
-                    f"{exc}"
-                ),
+                message,
+            )
+
+            self.status_label.setText(
+                "Import failed."
+            )
+
+            self.result_output.setPlainText(
+                message
             )
 
             self.import_button.setEnabled(
@@ -412,19 +613,19 @@ class ImportListingsDialog(QDialog):
             "IMPORT COMPLETE",
             "",
             (
-                "Rows found: "
+                "Rows found:          "
                 f"{result.total_rows}"
             ),
             (
-                "Listings imported: "
+                "Listings imported:   "
                 f"{result.imported_count}"
             ),
             (
-                "Listings skipped: "
+                "Listings skipped:    "
                 f"{result.skipped_count}"
             ),
             (
-                "Photos imported: "
+                "Photos imported:     "
                 f"{result.photos_imported}"
             ),
         ]
@@ -471,9 +672,9 @@ class ImportListingsDialog(QDialog):
 
         self.status_label.setText(
             (
-                f"Finished — "
-                f"{result.imported_count} listings, "
-                f"{result.photos_imported} photos."
+                "Finished — "
+                f"{result.imported_count} listing(s) imported, "
+                f"{result.skipped_count} skipped."
             )
         )
 
@@ -505,80 +706,7 @@ class ImportListingsDialog(QDialog):
     def _apply_styles(
         self,
     ) -> None:
-        self.setStyleSheet(
-            """
-            QDialog {
-                background-color: #f5f6f8;
-                color: #111827;
-            }
-
-            QWidget {
-                font-family: "Segoe UI";
-                font-size: 14px;
-                color: #111827;
-            }
-
-            #dialogHeading {
-                font-size: 24px;
-                font-weight: 700;
-            }
-
-            #dialogSubtitle {
-                color: #6b7280;
-            }
-
-            #sectionLabel,
-            #statusText {
-                font-weight: 600;
-            }
-
-            #infoBox {
-                background-color: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-                padding: 12px;
-            }
-
-            #warningText {
-                background-color: #fffbeb;
-                color: #92400e;
-                border: 1px solid #fde68a;
-                border-radius: 7px;
-                padding: 10px;
-            }
-
-            QLineEdit,
-            QTextEdit {
-                background-color: white;
-                color: #111827;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px;
-            }
-
-            #primaryButton {
-                background-color: #1f2937;
-                color: white;
-                border: none;
-                border-radius: 7px;
-                padding: 10px 18px;
-                font-weight: 600;
-            }
-
-            #primaryButton:hover {
-                background-color: #374151;
-            }
-
-            #primaryButton:disabled {
-                background-color: #9ca3af;
-            }
-
-            #secondaryButton {
-                background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 7px;
-                padding: 10px 16px;
-            }
-            """
-        )
+        """
+        ThemeManager owns application styling.
+        """
+        return

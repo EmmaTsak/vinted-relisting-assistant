@@ -2,8 +2,17 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from PySide6.QtCore import QSize, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QIcon, QPixmap
+from PySide6.QtCore import (
+    QSize,
+    Qt,
+    QUrl,
+    Signal,
+)
+from PySide6.QtGui import (
+    QDesktopServices,
+    QIcon,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -35,8 +44,12 @@ from app.services.queue_service import (
     QueueEntryNotFoundError,
     mark_as_relisted,
 )
-from app.utils.clipboard import copy_text
-from app.utils.paths import get_listing_photos_directory
+from app.utils.clipboard import (
+    copy_text,
+)
+from app.utils.paths import (
+    get_listing_photos_directory,
+)
 
 
 DEFAULT_VINTED_URL = "https://www.vinted.gr/"
@@ -44,13 +57,15 @@ DEFAULT_VINTED_URL = "https://www.vinted.gr/"
 
 class RelistingPreparationDialog(QDialog):
     """
-    Dedicated preparation workspace for manually recreating
-    a listing on Vinted.
+    Manual relisting preparation workspace.
 
-    This dialog never controls or automates the Vinted website.
+    The assistant prepares local information only.
+    Publishing remains entirely manual.
     """
 
     relisted = Signal(int)
+
+    BUTTON_HEIGHT = 40
 
     def __init__(
         self,
@@ -60,23 +75,37 @@ class RelistingPreparationDialog(QDialog):
         minimum_age_days: int = DEFAULT_MINIMUM_RELIST_AGE_DAYS,
         vinted_url: str = DEFAULT_VINTED_URL,
     ) -> None:
-        super().__init__(parent)
+        super().__init__(
+            parent
+        )
 
         self.listing_id = listing_id
-        self.configured_limit = configured_limit
-        self.minimum_age_days = minimum_age_days
+
+        self.configured_limit = (
+            configured_limit
+        )
+
+        self.minimum_age_days = (
+            minimum_age_days
+        )
+
         self.vinted_url = vinted_url
 
         self.listing = None
+
         self.photos = []
 
         self.setWindowTitle(
             "Prepare Listing for Relisting"
         )
 
+        self.setModal(
+            True
+        )
+
         self.resize(
             1180,
-            800,
+            820,
         )
 
         self.setMinimumSize(
@@ -89,8 +118,10 @@ class RelistingPreparationDialog(QDialog):
                 self.listing_id
             )
 
-            self.photos = get_listing_photos(
-                self.listing_id
+            self.photos = (
+                get_listing_photos(
+                    self.listing_id
+                )
             )
 
         except ListingNotFoundError as exc:
@@ -112,13 +143,18 @@ class RelistingPreparationDialog(QDialog):
             return
 
         self._build_ui()
+
         self._load_photo_gallery()
+
         self._apply_styles()
 
-    def _build_ui(self) -> None:
-        """
-        Build the relisting preparation interface.
-        """
+    # =====================================================
+    # Main UI
+    # =====================================================
+
+    def _build_ui(
+        self,
+    ) -> None:
         if self.listing is None:
             return
 
@@ -130,73 +166,25 @@ class RelistingPreparationDialog(QDialog):
             22,
             22,
             22,
-            22,
+            20,
         )
 
         main_layout.setSpacing(
-            16
-        )
-
-        heading_row = QHBoxLayout()
-
-        heading = QLabel(
-            "Prepare Listing"
-        )
-
-        heading.setObjectName(
-            "preparationHeading"
-        )
-
-        price = Decimal(
-            str(self.listing.price)
-        )
-
-        price_label = QLabel(
-            f"{price:.2f} {self.listing.currency}"
-        )
-
-        price_label.setObjectName(
-            "headerPrice"
-        )
-
-        heading_row.addWidget(
-            heading
-        )
-
-        heading_row.addStretch()
-
-        heading_row.addWidget(
-            price_label
+            14
         )
 
         main_layout.addLayout(
-            heading_row
-        )
-
-        subtitle = QLabel(
-            (
-                "Use this screen to prepare the listing. "
-                "You remain responsible for manually uploading "
-                "the photos and publishing it on Vinted."
-            )
-        )
-
-        subtitle.setWordWrap(
-            True
-        )
-
-        subtitle.setObjectName(
-            "subtitle"
+            self._create_header()
         )
 
         main_layout.addWidget(
-            subtitle
+            self._create_workflow_bar()
         )
 
         content_layout = QHBoxLayout()
 
         content_layout.setSpacing(
-            22
+            18
         )
 
         content_layout.addWidget(
@@ -213,84 +201,265 @@ class RelistingPreparationDialog(QDialog):
             1,
         )
 
-        bottom_row = QHBoxLayout()
-
-        close_button = QPushButton(
-            "CLOSE"
-        )
-
-        close_button.setObjectName(
-            "secondaryButton"
-        )
-
-        close_button.clicked.connect(
-            self.reject
-        )
-
-        copy_full_button = QPushButton(
-            "COPY FULL LISTING"
-        )
-
-        copy_full_button.setObjectName(
-            "secondaryButton"
-        )
-
-        copy_full_button.clicked.connect(
-            self._copy_full_listing
-        )
-
-        open_vinted_button = QPushButton(
-            "OPEN VINTED"
-        )
-
-        open_vinted_button.setObjectName(
-            "secondaryButton"
-        )
-
-        open_vinted_button.clicked.connect(
-            self._open_vinted
-        )
-
-        relisted_button = QPushButton(
-            "MARK AS RELISTED"
-        )
-
-        relisted_button.setObjectName(
-            "primaryButton"
-        )
-
-        relisted_button.clicked.connect(
-            self._mark_as_relisted
-        )
-
-        bottom_row.addWidget(
-            close_button
-        )
-
-        bottom_row.addStretch()
-
-        bottom_row.addWidget(
-            copy_full_button
-        )
-
-        bottom_row.addWidget(
-            open_vinted_button
-        )
-
-        bottom_row.addWidget(
-            relisted_button
-        )
-
         main_layout.addLayout(
-            bottom_row
+            self._create_footer()
         )
+
+    def _create_header(
+        self,
+    ) -> QHBoxLayout:
+        row = QHBoxLayout()
+
+        row.setSpacing(
+            14
+        )
+
+        text_layout = QVBoxLayout()
+
+        text_layout.setSpacing(
+            3
+        )
+
+        heading = QLabel(
+            "Prepare Listing"
+        )
+
+        heading.setObjectName(
+            "preparationHeading"
+        )
+
+        subtitle = QLabel(
+            (
+                "Everything here is preparation only. "
+                "You manually publish the item on Vinted."
+            )
+        )
+
+        subtitle.setObjectName(
+            "subtitle"
+        )
+
+        subtitle.setWordWrap(
+            True
+        )
+
+        text_layout.addWidget(
+            heading
+        )
+
+        text_layout.addWidget(
+            subtitle
+        )
+
+        row.addLayout(
+            text_layout,
+            1,
+        )
+
+        price = Decimal(
+            str(
+                self.listing.price
+            )
+        )
+
+        price_label = QLabel(
+            (
+                f"{price:.2f} "
+                f"{self.listing.currency}"
+            )
+        )
+
+        price_label.setObjectName(
+            "headerPrice"
+        )
+
+        row.addWidget(
+            price_label,
+            0,
+            Qt.AlignmentFlag.AlignTop,
+        )
+
+        return row
+
+    # =====================================================
+    # Workflow
+    # =====================================================
+
+    def _create_workflow_bar(
+        self,
+    ) -> QFrame:
+        frame = QFrame()
+
+        frame.setObjectName(
+            "informationBox"
+        )
+
+        layout = QHBoxLayout(
+            frame
+        )
+
+        layout.setContentsMargins(
+            16,
+            12,
+            16,
+            12,
+        )
+
+        layout.setSpacing(
+            10
+        )
+
+        self._add_workflow_step(
+            layout,
+            "1",
+            "COPY DETAILS",
+            (
+                "Copy the information "
+                "you need."
+            ),
+        )
+
+        arrow_1 = QLabel(
+            "→"
+        )
+
+        arrow_1.setObjectName(
+            "informationText"
+        )
+
+        layout.addWidget(
+            arrow_1
+        )
+
+        self._add_workflow_step(
+            layout,
+            "2",
+            "PUBLISH MANUALLY",
+            (
+                "Upload photos and publish "
+                "in Vinted yourself."
+            ),
+        )
+
+        arrow_2 = QLabel(
+            "→"
+        )
+
+        arrow_2.setObjectName(
+            "informationText"
+        )
+
+        layout.addWidget(
+            arrow_2
+        )
+
+        self._add_workflow_step(
+            layout,
+            "3",
+            "CONFIRM RELIST",
+            (
+                "Record it here only after "
+                "publishing succeeds."
+            ),
+        )
+
+        return frame
+
+    def _add_workflow_step(
+        self,
+        layout: QHBoxLayout,
+        number: str,
+        title: str,
+        description: str,
+    ) -> None:
+        container = QWidget()
+
+        container_layout = QHBoxLayout(
+            container
+        )
+
+        container_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        container_layout.setSpacing(
+            8
+        )
+
+        number_label = QLabel(
+            number
+        )
+
+        number_label.setObjectName(
+            "activeBadge"
+        )
+
+        number_label.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+
+        number_label.setMinimumWidth(
+            28
+        )
+
+        text_layout = QVBoxLayout()
+
+        text_layout.setSpacing(
+            1
+        )
+
+        heading = QLabel(
+            title
+        )
+
+        heading.setObjectName(
+            "sectionHeading"
+        )
+
+        help_text = QLabel(
+            description
+        )
+
+        help_text.setObjectName(
+            "informationText"
+        )
+
+        help_text.setWordWrap(
+            True
+        )
+
+        text_layout.addWidget(
+            heading
+        )
+
+        text_layout.addWidget(
+            help_text
+        )
+
+        container_layout.addWidget(
+            number_label
+        )
+
+        container_layout.addLayout(
+            text_layout,
+            1,
+        )
+
+        layout.addWidget(
+            container,
+            1,
+        )
+
+    # =====================================================
+    # Photos
+    # =====================================================
 
     def _create_photo_panel(
         self,
     ) -> QWidget:
-        """
-        Create the left-side photo gallery.
-        """
         panel = QFrame()
 
         panel.setObjectName(
@@ -298,7 +467,7 @@ class RelistingPreparationDialog(QDialog):
         )
 
         panel.setFixedWidth(
-            360
+            350
         )
 
         layout = QVBoxLayout(
@@ -313,8 +482,10 @@ class RelistingPreparationDialog(QDialog):
         )
 
         layout.setSpacing(
-            12
+            10
         )
+
+        title_row = QHBoxLayout()
 
         title = QLabel(
             "PHOTOS"
@@ -324,8 +495,33 @@ class RelistingPreparationDialog(QDialog):
             "sectionTitle"
         )
 
-        layout.addWidget(
+        photo_count = QLabel(
+            (
+                f"{len(self.photos)} "
+                + (
+                    "photo"
+                    if len(self.photos) == 1
+                    else "photos"
+                )
+            )
+        )
+
+        photo_count.setObjectName(
+            "informationText"
+        )
+
+        title_row.addWidget(
             title
+        )
+
+        title_row.addStretch()
+
+        title_row.addWidget(
+            photo_count
+        )
+
+        layout.addLayout(
+            title_row
         )
 
         self.large_preview = QLabel(
@@ -337,7 +533,7 @@ class RelistingPreparationDialog(QDialog):
         )
 
         self.large_preview.setFixedHeight(
-            360
+            340
         )
 
         self.large_preview.setObjectName(
@@ -356,8 +552,8 @@ class RelistingPreparationDialog(QDialog):
 
         self.photo_list.setIconSize(
             QSize(
-                85,
-                85,
+                78,
+                78,
             )
         )
 
@@ -370,11 +566,11 @@ class RelistingPreparationDialog(QDialog):
         )
 
         self.photo_list.setSpacing(
-            7
+            6
         )
 
         self.photo_list.setFixedHeight(
-            130
+            120
         )
 
         self.photo_list.currentItemChanged.connect(
@@ -385,12 +581,40 @@ class RelistingPreparationDialog(QDialog):
             self.photo_list
         )
 
+        help_text = QLabel(
+            (
+                "Select a thumbnail to preview it. "
+                "Use the folder button when you need the "
+                "original files for manual upload."
+            )
+        )
+
+        help_text.setObjectName(
+            "informationText"
+        )
+
+        help_text.setWordWrap(
+            True
+        )
+
+        layout.addWidget(
+            help_text
+        )
+
         folder_button = QPushButton(
             "OPEN PHOTO FOLDER"
         )
 
         folder_button.setObjectName(
             "secondaryButton"
+        )
+
+        folder_button.setMinimumHeight(
+            self.BUTTON_HEIGHT
+        )
+
+        folder_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
         )
 
         folder_button.clicked.connect(
@@ -401,14 +625,17 @@ class RelistingPreparationDialog(QDialog):
             folder_button
         )
 
+        layout.addStretch()
+
         return panel
+
+    # =====================================================
+    # Listing details
+    # =====================================================
 
     def _create_details_panel(
         self,
     ) -> QWidget:
-        """
-        Create the right-side listing information panel.
-        """
         scroll = QScrollArea()
 
         scroll.setWidgetResizable(
@@ -417,6 +644,10 @@ class RelistingPreparationDialog(QDialog):
 
         scroll.setFrameShape(
             QFrame.Shape.NoFrame
+        )
+
+        scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
 
         container = QWidget()
@@ -428,7 +659,7 @@ class RelistingPreparationDialog(QDialog):
         layout.setContentsMargins(
             0,
             0,
-            10,
+            8,
             0,
         )
 
@@ -436,25 +667,31 @@ class RelistingPreparationDialog(QDialog):
             10
         )
 
-        section_title = QLabel(
-            "LISTING DETAILS"
+        listing = self.listing
+
+        if listing is None:
+            scroll.setWidget(
+                container
+            )
+
+            return scroll
+
+        essentials = QLabel(
+            "LISTING ESSENTIALS"
         )
 
-        section_title.setObjectName(
+        essentials.setObjectName(
             "sectionTitle"
         )
 
         layout.addWidget(
-            section_title
+            essentials
         )
 
-        listing = self.listing
-
-        if listing is None:
-            return scroll
-
         price = Decimal(
-            str(listing.price)
+            str(
+                listing.price
+            )
         )
 
         self._add_detail_field(
@@ -473,64 +710,195 @@ class RelistingPreparationDialog(QDialog):
         self._add_detail_field(
             layout,
             "PRICE",
-            f"{price:.2f} {listing.currency}",
+            (
+                f"{price:.2f} "
+                f"{listing.currency}"
+            ),
+        )
+
+        # -------------------------------------------------
+        # Optional details - collapsed initially
+        # -------------------------------------------------
+
+        self.item_details_toggle = (
+            QPushButton(
+                "ITEM DETAILS ▾"
+            )
+        )
+
+        self.item_details_toggle.setObjectName(
+            "secondaryButton"
+        )
+
+        self.item_details_toggle.setCheckable(
+            True
+        )
+
+        self.item_details_toggle.setChecked(
+            False
+        )
+
+        self.item_details_toggle.setMinimumHeight(
+            self.BUTTON_HEIGHT
+        )
+
+        self.item_details_toggle.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        self.item_details_toggle.toggled.connect(
+            self._toggle_item_details
+        )
+
+        layout.addWidget(
+            self.item_details_toggle
+        )
+
+        self.item_details_container = (
+            QFrame()
+        )
+
+        self.item_details_container.setObjectName(
+            "informationBox"
+        )
+
+        item_details_layout = QVBoxLayout(
+            self.item_details_container
+        )
+
+        item_details_layout.setContentsMargins(
+            10,
+            10,
+            10,
+            10,
+        )
+
+        item_details_layout.setSpacing(
+            8
         )
 
         self._add_optional_field(
-            layout,
+            item_details_layout,
             "CATEGORY",
             listing.category,
         )
 
         self._add_optional_field(
-            layout,
+            item_details_layout,
             "SUBCATEGORY",
             listing.subcategory,
         )
 
         self._add_optional_field(
-            layout,
+            item_details_layout,
             "BRAND",
             listing.brand,
         )
 
         self._add_optional_field(
-            layout,
+            item_details_layout,
             "SIZE",
             listing.size,
         )
 
         self._add_optional_field(
-            layout,
+            item_details_layout,
             "CONDITION",
             listing.condition,
         )
 
         self._add_optional_field(
-            layout,
+            item_details_layout,
             "COLOUR",
             listing.colour,
         )
 
         self._add_optional_field(
-            layout,
+            item_details_layout,
             "MATERIAL",
             listing.material,
         )
 
         self._add_optional_field(
-            layout,
+            item_details_layout,
             "PARCEL SIZE",
             listing.parcel_size,
         )
 
+        if listing.isbn:
+            self._add_detail_field(
+                item_details_layout,
+                "ISBN",
+                listing.isbn,
+            )
+
+        if (
+            item_details_layout.count()
+            == 0
+        ):
+            no_details = QLabel(
+                "No optional item details have been saved."
+            )
+
+            no_details.setObjectName(
+                "informationText"
+            )
+
+            no_details.setWordWrap(
+                True
+            )
+
+            item_details_layout.addWidget(
+                no_details
+            )
+
+        self.item_details_container.setVisible(
+            False
+        )
+
+        layout.addWidget(
+            self.item_details_container
+        )
+
+        # -------------------------------------------------
+        # Local notes
+        # -------------------------------------------------
+
         if listing.notes:
+            notes_heading = QLabel(
+                "PRIVATE NOTES"
+            )
+
+            notes_heading.setObjectName(
+                "sectionTitle"
+            )
+
+            layout.addWidget(
+                notes_heading
+            )
+
             self._add_detail_field(
                 layout,
-                "PRIVATE NOTES",
+                "LOCAL NOTES",
                 listing.notes,
                 multiline=True,
             )
+
+        # -------------------------------------------------
+        # Relisting information
+        # -------------------------------------------------
+
+        relisting_heading = QLabel(
+            "RELISTING INFORMATION"
+        )
+
+        relisting_heading.setObjectName(
+            "sectionTitle"
+        )
+
+        layout.addWidget(
+            relisting_heading
+        )
 
         information = QFrame()
 
@@ -549,34 +917,58 @@ class RelistingPreparationDialog(QDialog):
             12,
         )
 
+        information_layout.setSpacing(
+            5
+        )
+
         if listing.last_relisted_date:
             last_relisted = (
-                listing.last_relisted_date.strftime(
+                listing.last_relisted_date
+                .strftime(
                     "%d %B %Y"
                 )
             )
         else:
             last_relisted = "Never"
 
-        information_text = QLabel(
+        original_label = QLabel(
             (
-                f"Original listing date: "
-                f"{listing.original_created_date:%d %B %Y}\n"
-                f"Last relisted: {last_relisted}\n"
-                f"Relist count: "
-                f"{listing.number_of_times_relisted}\n"
-                f"Priority: "
+                "Original listing date: "
+                f"{listing.original_created_date:%d %B %Y}"
+            )
+        )
+
+        last_label = QLabel(
+            f"Last relisted: {last_relisted}"
+        )
+
+        count_label = QLabel(
+            (
+                "Relist count: "
+                f"{listing.number_of_times_relisted}"
+            )
+        )
+
+        priority_label = QLabel(
+            (
+                "Priority: "
                 f"{listing.priority.value.capitalize()}"
             )
         )
 
-        information_text.setObjectName(
-            "metadataText"
-        )
+        for label in (
+            original_label,
+            last_label,
+            count_label,
+            priority_label,
+        ):
+            label.setObjectName(
+                "metadataText"
+            )
 
-        information_layout.addWidget(
-            information_text
-        )
+            information_layout.addWidget(
+                label
+            )
 
         layout.addWidget(
             information
@@ -590,15 +982,29 @@ class RelistingPreparationDialog(QDialog):
 
         return scroll
 
+    def _toggle_item_details(
+        self,
+        expanded: bool,
+    ) -> None:
+        self.item_details_container.setVisible(
+            expanded
+        )
+
+        if expanded:
+            self.item_details_toggle.setText(
+                "ITEM DETAILS ▴"
+            )
+        else:
+            self.item_details_toggle.setText(
+                "ITEM DETAILS ▾"
+            )
+
     def _add_optional_field(
         self,
         layout: QVBoxLayout,
         label: str,
         value: str | None,
     ) -> None:
-        """
-        Add a field only when the listing has a value.
-        """
         if value:
             self._add_detail_field(
                 layout,
@@ -613,9 +1019,6 @@ class RelistingPreparationDialog(QDialog):
         value: str,
         multiline: bool = False,
     ) -> None:
-        """
-        Create one listing detail with its own Copy button.
-        """
         frame = QFrame()
 
         frame.setObjectName(
@@ -633,7 +1036,15 @@ class RelistingPreparationDialog(QDialog):
             10,
         )
 
+        field_layout.setSpacing(
+            10
+        )
+
         text_layout = QVBoxLayout()
+
+        text_layout.setSpacing(
+            4
+        )
 
         heading = QLabel(
             label
@@ -663,7 +1074,7 @@ class RelistingPreparationDialog(QDialog):
             )
 
             value_widget.setMaximumHeight(
-                160
+                165
             )
 
             value_widget.setObjectName(
@@ -705,14 +1116,22 @@ class RelistingPreparationDialog(QDialog):
         )
 
         copy_button.setFixedWidth(
-            75
+            76
+        )
+
+        copy_button.setMinimumHeight(
+            34
+        )
+
+        copy_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
         )
 
         copy_button.clicked.connect(
-            lambda checked=False, text=value: (
-                self._copy_value(
-                    text
-                )
+            lambda checked=False,
+            text=value:
+            self._copy_value(
+                text
             )
         )
 
@@ -726,12 +1145,120 @@ class RelistingPreparationDialog(QDialog):
             frame
         )
 
+    # =====================================================
+    # Footer
+    # =====================================================
+
+    def _create_footer(
+        self,
+    ) -> QHBoxLayout:
+        row = QHBoxLayout()
+
+        row.setSpacing(
+            8
+        )
+
+        close_button = QPushButton(
+            "CLOSE"
+        )
+
+        close_button.setObjectName(
+            "secondaryButton"
+        )
+
+        close_button.setMinimumHeight(
+            self.BUTTON_HEIGHT
+        )
+
+        close_button.clicked.connect(
+            self.reject
+        )
+
+        copy_full_button = QPushButton(
+            "COPY FULL LISTING"
+        )
+
+        copy_full_button.setObjectName(
+            "secondaryButton"
+        )
+
+        copy_full_button.setMinimumHeight(
+            self.BUTTON_HEIGHT
+        )
+
+        copy_full_button.clicked.connect(
+            self._copy_full_listing
+        )
+
+        open_vinted_button = QPushButton(
+            "OPEN VINTED"
+        )
+
+        open_vinted_button.setObjectName(
+            "secondaryButton"
+        )
+
+        open_vinted_button.setMinimumHeight(
+            self.BUTTON_HEIGHT
+        )
+
+        open_vinted_button.clicked.connect(
+            self._open_vinted
+        )
+
+        relisted_button = QPushButton(
+            "MARK AS RELISTED"
+        )
+
+        relisted_button.setObjectName(
+            "primaryButton"
+        )
+
+        relisted_button.setMinimumHeight(
+            self.BUTTON_HEIGHT
+        )
+
+        relisted_button.clicked.connect(
+            self._mark_as_relisted
+        )
+
+        for button in (
+            close_button,
+            copy_full_button,
+            open_vinted_button,
+            relisted_button,
+        ):
+            button.setCursor(
+                Qt.CursorShape.PointingHandCursor
+            )
+
+        row.addWidget(
+            close_button
+        )
+
+        row.addStretch()
+
+        row.addWidget(
+            copy_full_button
+        )
+
+        row.addWidget(
+            open_vinted_button
+        )
+
+        row.addWidget(
+            relisted_button
+        )
+
+        return row
+
+    # =====================================================
+    # Photos
+    # =====================================================
+
     def _load_photo_gallery(
         self,
     ) -> None:
-        """
-        Populate the thumbnail strip.
-        """
         if not hasattr(
             self,
             "photo_list",
@@ -752,8 +1279,10 @@ class RelistingPreparationDialog(QDialog):
         for index, photo in enumerate(
             self.photos
         ):
-            thumbnail = get_thumbnail_path(
-                photo
+            thumbnail = (
+                get_thumbnail_path(
+                    photo
+                )
             )
 
             item = QListWidgetItem()
@@ -764,7 +1293,9 @@ class RelistingPreparationDialog(QDialog):
             )
 
             pixmap = QPixmap(
-                str(thumbnail)
+                str(
+                    thumbnail
+                )
             )
 
             if not pixmap.isNull():
@@ -800,9 +1331,6 @@ class RelistingPreparationDialog(QDialog):
         current: QListWidgetItem | None,
         previous: QListWidgetItem | None,
     ) -> None:
-        """
-        Update the large image when a thumbnail is selected.
-        """
         del previous
 
         if current is None:
@@ -824,9 +1352,6 @@ class RelistingPreparationDialog(QDialog):
         self,
         photo,
     ) -> None:
-        """
-        Show one stored image in the large preview.
-        """
         path = resolve_photo_path(
             photo
         )
@@ -841,7 +1366,9 @@ class RelistingPreparationDialog(QDialog):
             return
 
         pixmap = QPixmap(
-            str(path)
+            str(
+                path
+            )
         )
 
         if pixmap.isNull():
@@ -855,20 +1382,43 @@ class RelistingPreparationDialog(QDialog):
 
         self.large_preview.setPixmap(
             pixmap.scaled(
-                330,
-                340,
+                320,
+                320,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
         )
 
+    def _open_photo_folder(
+        self,
+    ) -> None:
+        folder = (
+            get_listing_photos_directory(
+                self.listing_id
+            )
+        )
+
+        folder.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        QDesktopServices.openUrl(
+            QUrl.fromLocalFile(
+                str(
+                    folder.resolve()
+                )
+            )
+        )
+
+    # =====================================================
+    # Copying
+    # =====================================================
+
     def _copy_value(
         self,
         value: str,
     ) -> None:
-        """
-        Copy a single listing value to the clipboard.
-        """
         try:
             copy_text(
                 value
@@ -884,22 +1434,24 @@ class RelistingPreparationDialog(QDialog):
             return
 
         self.setWindowTitle(
-            "Prepare Listing for Relisting — Copied"
+            (
+                "Prepare Listing for "
+                "Relisting — Copied"
+            )
         )
 
     def _copy_full_listing(
         self,
     ) -> None:
-        """
-        Copy a human-readable summary of the listing.
-        """
         if self.listing is None:
             return
 
         listing = self.listing
 
         price = Decimal(
-            str(listing.price)
+            str(
+                listing.price
+            )
         )
 
         lines = [
@@ -910,7 +1462,10 @@ class RelistingPreparationDialog(QDialog):
             listing.description,
             "",
             "PRICE",
-            f"{price:.2f} {listing.currency}",
+            (
+                f"{price:.2f} "
+                f"{listing.currency}"
+            ),
         ]
 
         optional_values = [
@@ -946,9 +1501,15 @@ class RelistingPreparationDialog(QDialog):
                 "PARCEL SIZE",
                 listing.parcel_size,
             ),
+            (
+                "ISBN",
+                listing.isbn,
+            ),
         ]
 
-        for heading, value in optional_values:
+        for heading, value in (
+            optional_values
+        ):
             if value:
                 lines.extend(
                     [
@@ -966,28 +1527,9 @@ class RelistingPreparationDialog(QDialog):
             full_text
         )
 
-    def _open_photo_folder(
-        self,
-    ) -> None:
-        """
-        Open this listing's managed photo directory in Windows Explorer.
-        """
-        folder = get_listing_photos_directory(
-            self.listing_id
-        )
-
-        folder.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-        QDesktopServices.openUrl(
-            QUrl.fromLocalFile(
-                str(
-                    folder.resolve()
-                )
-            )
-        )
+    # =====================================================
+    # Vinted
+    # =====================================================
 
     def _open_vinted(
         self,
@@ -1003,12 +1545,13 @@ class RelistingPreparationDialog(QDialog):
             )
         )
 
+    # =====================================================
+    # Relisting confirmation
+    # =====================================================
+
     def _mark_as_relisted(
         self,
     ) -> None:
-        """
-        Record a successful manual republication after confirmation.
-        """
         answer = QMessageBox.question(
             self,
             "Mark as Relisted",
@@ -1073,8 +1616,8 @@ class RelistingPreparationDialog(QDialog):
             self,
             "Relisting Recorded",
             (
-                "The listing was successfully recorded "
-                "as relisted."
+                "The listing was successfully "
+                "recorded as relisted."
             ),
         )
 
@@ -1088,138 +1631,6 @@ class RelistingPreparationDialog(QDialog):
         self,
     ) -> None:
         """
-        Apply preparation-window styling with explicit text colours
-        so Windows dark mode does not make fields unreadable.
+        ThemeManager controls Light/Dark appearance globally.
         """
-        self.setStyleSheet(
-            """
-            QDialog {
-                background-color: #f5f6f8;
-                color: #111827;
-            }
-
-            QWidget {
-                font-family: "Segoe UI";
-                font-size: 14px;
-                color: #111827;
-            }
-
-            #preparationHeading {
-                font-size: 26px;
-                font-weight: 700;
-            }
-
-            #headerPrice {
-                font-size: 22px;
-                font-weight: 700;
-            }
-
-            #subtitle {
-                color: #6b7280;
-            }
-
-            #sectionTitle {
-                font-size: 14px;
-                font-weight: 700;
-                color: #4b5563;
-            }
-
-            #photoPanel {
-                background-color: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 10px;
-            }
-
-            #largePreview {
-                background-color: #f3f4f6;
-                color: #9ca3af;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-            }
-
-            QListWidget {
-                background-color: #f9fafb;
-                color: #111827;
-                border: 1px solid #e5e7eb;
-                border-radius: 7px;
-            }
-
-            QListWidget::item:selected {
-                background-color: #dbeafe;
-                color: #111827;
-            }
-
-            #detailField {
-                background-color: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-            }
-
-            #fieldHeading {
-                color: #6b7280;
-                font-size: 11px;
-                font-weight: 700;
-            }
-
-            #fieldValue {
-                color: #111827;
-                font-size: 14px;
-            }
-
-            #fieldTextEdit {
-                background-color: transparent;
-                color: #111827;
-                border: none;
-            }
-
-            #informationBox {
-                background-color: #f9fafb;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-            }
-
-            #metadataText {
-                color: #4b5563;
-            }
-
-            #copyButton {
-                background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 6px 9px;
-                font-size: 11px;
-                font-weight: 700;
-            }
-
-            #copyButton:hover {
-                background-color: #f3f4f6;
-            }
-
-            #primaryButton {
-                background-color: #1f2937;
-                color: white;
-                border: none;
-                border-radius: 7px;
-                padding: 10px 16px;
-                font-weight: 700;
-            }
-
-            #primaryButton:hover {
-                background-color: #374151;
-            }
-
-            #secondaryButton {
-                background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 7px;
-                padding: 10px 16px;
-                font-weight: 600;
-            }
-
-            #secondaryButton:hover {
-                background-color: #f3f4f6;
-            }
-            """
-        )
+        return

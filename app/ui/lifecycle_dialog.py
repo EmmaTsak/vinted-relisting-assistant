@@ -1,17 +1,24 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import (
+    Qt,
+    Signal,
+)
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
-from app.models import ListingStatus
+from app.models import (
+    ListingStatus,
+)
 from app.services.lifecycle_service import (
     archive_listing,
     delete_permanently,
@@ -20,16 +27,20 @@ from app.services.lifecycle_service import (
     restore_to_active,
     set_queue_excluded,
 )
-from app.services.listing_service import get_listing
+from app.services.listing_service import (
+    get_listing,
+)
 
 
 class ListingLifecycleDialog(QDialog):
     """
-    Manage sold/archive/pause state for one listing.
+    Manage lifecycle and relisting availability for one listing.
     """
 
     listing_changed = Signal(int)
     listing_deleted = Signal(int)
+
+    BUTTON_HEIGHT = 40
 
     def __init__(
         self,
@@ -46,35 +57,73 @@ class ListingLifecycleDialog(QDialog):
             "Manage Listing"
         )
 
-        self.resize(
-            470,
-            560,
+        self.setModal(
+            True
         )
 
-        self.setMinimumWidth(
-            430
+        self.resize(
+            620,
+            680,
+        )
+
+        self.setMinimumSize(
+            540,
+            560,
         )
 
         self._build_ui()
         self._apply_styles()
 
-    def _build_ui(self) -> None:
+    def _build_ui(
+        self,
+    ) -> None:
         listing = get_listing(
             self.listing_id
         )
 
-        layout = QVBoxLayout(
+        root_layout = QVBoxLayout(
             self
         )
 
-        layout.setContentsMargins(
+        root_layout.setContentsMargins(
             24,
             24,
             24,
-            24,
+            20,
         )
 
-        layout.setSpacing(
+        root_layout.setSpacing(
+            14
+        )
+
+        # -------------------------------------------------
+        # Header
+        # -------------------------------------------------
+
+        header = QFrame()
+
+        header.setObjectName(
+            "informationBox"
+        )
+
+        header_layout = QVBoxLayout(
+            header
+        )
+
+        header_layout.setContentsMargins(
+            18,
+            16,
+            18,
+            16,
+        )
+
+        header_layout.setSpacing(
+            8
+        )
+
+        title_row = QHBoxLayout()
+
+        title_row.setSpacing(
             12
         )
 
@@ -90,213 +139,162 @@ class ListingLifecycleDialog(QDialog):
             True
         )
 
-        layout.addWidget(
-            title
-        )
-
         status = QLabel(
-            (
-                "Current status: "
-                f"{listing.status.value.capitalize()}"
-            )
+            listing.status.value.upper()
         )
 
         status.setObjectName(
-            "currentStatus"
+            self._status_badge_name(
+                listing.status
+            )
         )
 
-        layout.addWidget(
-            status
+        status.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
         )
 
-        if listing.paused_indefinitely:
-            pause_information = QLabel(
-                "Paused indefinitely"
-            )
+        title_row.addWidget(
+            title,
+            1,
+        )
 
-            pause_information.setObjectName(
-                "informationText"
-            )
+        title_row.addWidget(
+            status,
+        )
 
-            layout.addWidget(
-                pause_information
-            )
+        header_layout.addLayout(
+            title_row
+        )
 
-        elif listing.paused_until is not None:
-            pause_information = QLabel(
+        state_information = QLabel(
+            self._build_state_information(
+                listing
+            )
+        )
+
+        state_information.setObjectName(
+            "informationText"
+        )
+
+        state_information.setWordWrap(
+            True
+        )
+
+        header_layout.addWidget(
+            state_information
+        )
+
+        if listing.manually_excluded:
+            excluded_label = QLabel(
                 (
-                    "Paused until: "
-                    f"{listing.paused_until:%d %B %Y}"
+                    "This listing is currently excluded "
+                    "from automatic relisting selection."
                 )
             )
 
-            pause_information.setObjectName(
-                "informationText"
-            )
-
-            layout.addWidget(
-                pause_information
-            )
-
-        if listing.manually_excluded:
-            exclusion = QLabel(
-                "Excluded from automatic relisting queue"
-            )
-
-            exclusion.setObjectName(
+            excluded_label.setObjectName(
                 "warningText"
             )
 
-            layout.addWidget(
-                exclusion
-            )
-
-        separator = QFrame()
-
-        separator.setFrameShape(
-            QFrame.Shape.HLine
-        )
-
-        layout.addWidget(
-            separator
-        )
-
-        if listing.status == ListingStatus.ACTIVE:
-            self._add_button(
-                layout,
-                "PAUSE 7 DAYS",
-                lambda: self._pause(7),
-            )
-
-            self._add_button(
-                layout,
-                "PAUSE 30 DAYS",
-                lambda: self._pause(30),
-            )
-
-            self._add_button(
-                layout,
-                "PAUSE INDEFINITELY",
-                lambda: self._pause(None),
-            )
-
-            if listing.manually_excluded:
-                self._add_button(
-                    layout,
-                    "INCLUDE IN RELISTING QUEUE",
-                    lambda: self._set_excluded(
-                        False
-                    ),
-                )
-
-            else:
-                self._add_button(
-                    layout,
-                    "EXCLUDE FROM RELISTING QUEUE",
-                    lambda: self._set_excluded(
-                        True
-                    ),
-                )
-
-            self._add_button(
-                layout,
-                "MARK AS SOLD",
-                self._mark_sold,
-            )
-
-            self._add_button(
-                layout,
-                "ARCHIVE LISTING",
-                self._archive,
-            )
-
-        elif listing.status == ListingStatus.PAUSED:
-            self._add_button(
-                layout,
-                "RESUME / MAKE ACTIVE",
-                self._restore,
-                primary=True,
-            )
-
-            if listing.manually_excluded:
-                self._add_button(
-                    layout,
-                    "INCLUDE IN RELISTING QUEUE",
-                    lambda: self._set_excluded(
-                        False
-                    ),
-                )
-
-            else:
-                self._add_button(
-                    layout,
-                    "EXCLUDE FROM RELISTING QUEUE",
-                    lambda: self._set_excluded(
-                        True
-                    ),
-                )
-
-            self._add_button(
-                layout,
-                "MARK AS SOLD",
-                self._mark_sold,
-            )
-
-            self._add_button(
-                layout,
-                "ARCHIVE LISTING",
-                self._archive,
-            )
-
-        elif listing.status == ListingStatus.SOLD:
-            self._add_button(
-                layout,
-                "RESTORE TO ACTIVE",
-                self._restore,
-                primary=True,
-            )
-
-            self._add_button(
-                layout,
-                "ARCHIVE LISTING",
-                self._archive,
-            )
-
-        elif listing.status == ListingStatus.ARCHIVED:
-            information = QLabel(
-                (
-                    "Archived listings remain stored locally. "
-                    "Permanent deletion is available only here."
-                )
-            )
-
-            information.setWordWrap(
+            excluded_label.setWordWrap(
                 True
             )
 
-            information.setObjectName(
-                "informationText"
+            header_layout.addWidget(
+                excluded_label
             )
 
-            layout.addWidget(
-                information
+        root_layout.addWidget(
+            header
+        )
+
+        # -------------------------------------------------
+        # Scrollable action area
+        # -------------------------------------------------
+
+        scroll_area = QScrollArea()
+
+        scroll_area.setWidgetResizable(
+            True
+        )
+
+        scroll_area.setFrameShape(
+            QFrame.Shape.NoFrame
+        )
+
+        scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+
+        content = QWidget()
+
+        content_layout = QVBoxLayout(
+            content
+        )
+
+        content_layout.setContentsMargins(
+            0,
+            0,
+            6,
+            0,
+        )
+
+        content_layout.setSpacing(
+            14
+        )
+
+        if (
+            listing.status
+            == ListingStatus.ACTIVE
+        ):
+            self._build_active_sections(
+                content_layout,
+                listing,
             )
 
-            self._add_button(
-                layout,
-                "RESTORE TO ACTIVE",
-                self._restore,
-                primary=True,
+        elif (
+            listing.status
+            == ListingStatus.PAUSED
+        ):
+            self._build_paused_sections(
+                content_layout,
+                listing,
             )
 
-            self._add_button(
-                layout,
-                "DELETE PERMANENTLY",
-                self._delete_permanently,
-                destructive=True,
+        elif (
+            listing.status
+            == ListingStatus.SOLD
+        ):
+            self._build_sold_sections(
+                content_layout,
             )
 
-        layout.addStretch()
+        elif (
+            listing.status
+            == ListingStatus.ARCHIVED
+        ):
+            self._build_archived_sections(
+                content_layout,
+            )
+
+        content_layout.addStretch()
+
+        scroll_area.setWidget(
+            content
+        )
+
+        root_layout.addWidget(
+            scroll_area,
+            1,
+        )
+
+        # -------------------------------------------------
+        # Close
+        # -------------------------------------------------
+
+        footer = QHBoxLayout()
+
+        footer.addStretch()
 
         close_button = QPushButton(
             "CLOSE"
@@ -306,24 +304,463 @@ class ListingLifecycleDialog(QDialog):
             "secondaryButton"
         )
 
+        close_button.setMinimumHeight(
+            self.BUTTON_HEIGHT
+        )
+
+        close_button.setMinimumWidth(
+            110
+        )
+
+        close_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
         close_button.clicked.connect(
             self.reject
         )
 
-        layout.addWidget(
+        footer.addWidget(
             close_button
         )
 
-    def _add_button(
+        root_layout.addLayout(
+            footer
+        )
+
+    # =====================================================
+    # Active
+    # =====================================================
+
+    def _build_active_sections(
         self,
-        layout: QVBoxLayout,
+        root: QVBoxLayout,
+        listing,
+    ) -> None:
+        availability = self._create_section(
+            title="AVAILABILITY",
+            description=(
+                "Temporarily remove this listing from "
+                "the active relisting rotation."
+            ),
+        )
+
+        availability_layout = (
+            availability.layout()
+        )
+
+        pause_row = QHBoxLayout()
+
+        pause_row.setSpacing(
+            8
+        )
+
+        pause_7 = self._create_action_button(
+            "PAUSE 7 DAYS",
+            lambda: self._pause(7),
+        )
+
+        pause_30 = self._create_action_button(
+            "PAUSE 30 DAYS",
+            lambda: self._pause(30),
+        )
+
+        pause_forever = self._create_action_button(
+            "PAUSE INDEFINITELY",
+            lambda: self._pause(None),
+        )
+
+        pause_row.addWidget(
+            pause_7
+        )
+
+        pause_row.addWidget(
+            pause_30
+        )
+
+        pause_row.addWidget(
+            pause_forever
+        )
+
+        availability_layout.addLayout(
+            pause_row
+        )
+
+        root.addWidget(
+            availability
+        )
+
+        root.addWidget(
+            self._build_queue_section(
+                listing.manually_excluded
+            )
+        )
+
+        status_section = self._create_section(
+            title="LISTING STATUS",
+            description=(
+                "Use these actions when the item's "
+                "overall inventory status changes."
+            ),
+        )
+
+        status_layout = (
+            status_section.layout()
+        )
+
+        actions = QHBoxLayout()
+
+        actions.setSpacing(
+            8
+        )
+
+        sold_button = (
+            self._create_action_button(
+                "MARK AS SOLD",
+                self._mark_sold,
+            )
+        )
+
+        archive_button = (
+            self._create_action_button(
+                "ARCHIVE LISTING",
+                self._archive,
+            )
+        )
+
+        actions.addWidget(
+            sold_button
+        )
+
+        actions.addWidget(
+            archive_button
+        )
+
+        status_layout.addLayout(
+            actions
+        )
+
+        root.addWidget(
+            status_section
+        )
+
+    # =====================================================
+    # Paused
+    # =====================================================
+
+    def _build_paused_sections(
+        self,
+        root: QVBoxLayout,
+        listing,
+    ) -> None:
+        availability = self._create_section(
+            title="AVAILABILITY",
+            description=(
+                "This listing is paused and will not be "
+                "selected until it becomes active again."
+            ),
+        )
+
+        availability_layout = (
+            availability.layout()
+        )
+
+        restore_button = (
+            self._create_action_button(
+                "RESUME / MAKE ACTIVE",
+                self._restore,
+                primary=True,
+            )
+        )
+
+        availability_layout.addWidget(
+            restore_button
+        )
+
+        root.addWidget(
+            availability
+        )
+
+        root.addWidget(
+            self._build_queue_section(
+                listing.manually_excluded
+            )
+        )
+
+        status_section = self._create_section(
+            title="LISTING STATUS",
+            description=(
+                "You can still mark a paused listing "
+                "as sold or move it to the archive."
+            ),
+        )
+
+        status_layout = (
+            status_section.layout()
+        )
+
+        actions = QHBoxLayout()
+
+        actions.setSpacing(
+            8
+        )
+
+        actions.addWidget(
+            self._create_action_button(
+                "MARK AS SOLD",
+                self._mark_sold,
+            )
+        )
+
+        actions.addWidget(
+            self._create_action_button(
+                "ARCHIVE LISTING",
+                self._archive,
+            )
+        )
+
+        status_layout.addLayout(
+            actions
+        )
+
+        root.addWidget(
+            status_section
+        )
+
+    # =====================================================
+    # Sold
+    # =====================================================
+
+    def _build_sold_sections(
+        self,
+        root: QVBoxLayout,
+    ) -> None:
+        status_section = self._create_section(
+            title="LISTING STATUS",
+            description=(
+                "Sold listings stay stored locally and are "
+                "excluded from relisting."
+            ),
+        )
+
+        status_layout = (
+            status_section.layout()
+        )
+
+        actions = QHBoxLayout()
+
+        actions.setSpacing(
+            8
+        )
+
+        actions.addWidget(
+            self._create_action_button(
+                "RESTORE TO ACTIVE",
+                self._restore,
+                primary=True,
+            )
+        )
+
+        actions.addWidget(
+            self._create_action_button(
+                "ARCHIVE LISTING",
+                self._archive,
+            )
+        )
+
+        status_layout.addLayout(
+            actions
+        )
+
+        root.addWidget(
+            status_section
+        )
+
+    # =====================================================
+    # Archived
+    # =====================================================
+
+    def _build_archived_sections(
+        self,
+        root: QVBoxLayout,
+    ) -> None:
+        status_section = self._create_section(
+            title="LISTING STATUS",
+            description=(
+                "Archived listings remain stored locally "
+                "but do not participate in relisting."
+            ),
+        )
+
+        status_layout = (
+            status_section.layout()
+        )
+
+        status_layout.addWidget(
+            self._create_action_button(
+                "RESTORE TO ACTIVE",
+                self._restore,
+                primary=True,
+            )
+        )
+
+        root.addWidget(
+            status_section
+        )
+
+        danger_section = self._create_section(
+            title="DANGER ZONE",
+            description=(
+                "Permanent deletion removes this listing, "
+                "its stored photos and its relisting history. "
+                "This cannot be undone."
+            ),
+        )
+
+        danger_layout = (
+            danger_section.layout()
+        )
+
+        delete_button = (
+            self._create_action_button(
+                "DELETE PERMANENTLY",
+                self._delete_permanently,
+                destructive=True,
+            )
+        )
+
+        danger_layout.addWidget(
+            delete_button
+        )
+
+        root.addWidget(
+            danger_section
+        )
+
+    # =====================================================
+    # Queue section
+    # =====================================================
+
+    def _build_queue_section(
+        self,
+        excluded: bool,
+    ) -> QFrame:
+        section = self._create_section(
+            title="RELISTING QUEUE",
+            description=(
+                "Control whether the assistant is allowed "
+                "to select this item for a future daily queue."
+            ),
+        )
+
+        layout = section.layout()
+
+        if excluded:
+            button = (
+                self._create_action_button(
+                    "INCLUDE IN RELISTING QUEUE",
+                    lambda:
+                    self._set_excluded(
+                        False
+                    ),
+                    primary=True,
+                )
+            )
+
+        else:
+            button = (
+                self._create_action_button(
+                    "EXCLUDE FROM RELISTING QUEUE",
+                    lambda:
+                    self._set_excluded(
+                        True
+                    ),
+                )
+            )
+
+        layout.addWidget(
+            button
+        )
+
+        return section
+
+    # =====================================================
+    # UI helpers
+    # =====================================================
+
+    def _create_section(
+        self,
+        title: str,
+        description: str,
+    ) -> QFrame:
+        frame = QFrame()
+
+        frame.setObjectName(
+            "informationBox"
+        )
+
+        layout = QVBoxLayout(
+            frame
+        )
+
+        layout.setContentsMargins(
+            16,
+            14,
+            16,
+            14,
+        )
+
+        layout.setSpacing(
+            10
+        )
+
+        heading = QLabel(
+            title
+        )
+
+        heading.setObjectName(
+            "sectionHeading"
+        )
+
+        help_text = QLabel(
+            description
+        )
+
+        help_text.setObjectName(
+            "informationText"
+        )
+
+        help_text.setWordWrap(
+            True
+        )
+
+        layout.addWidget(
+            heading
+        )
+
+        layout.addWidget(
+            help_text
+        )
+
+        return frame
+
+    def _create_action_button(
+        self,
         text: str,
         callback,
         primary: bool = False,
         destructive: bool = False,
-    ) -> None:
+    ) -> QPushButton:
         button = QPushButton(
             text
+        )
+
+        button.setMinimumHeight(
+            self.BUTTON_HEIGHT
+        )
+
+        button.setCursor(
+            Qt.CursorShape.PointingHandCursor
         )
 
         if destructive:
@@ -345,9 +782,78 @@ class ListingLifecycleDialog(QDialog):
             callback
         )
 
-        layout.addWidget(
-            button
+        return button
+
+    def _status_badge_name(
+        self,
+        status: ListingStatus,
+    ) -> str:
+        if status == ListingStatus.ACTIVE:
+            return "activeBadge"
+
+        if status == ListingStatus.PAUSED:
+            return "pausedBadge"
+
+        if status == ListingStatus.SOLD:
+            return "soldBadge"
+
+        if status == ListingStatus.ARCHIVED:
+            return "archivedBadge"
+
+        return "statusBadge"
+
+    def _build_state_information(
+        self,
+        listing,
+    ) -> str:
+        if listing.status == ListingStatus.ACTIVE:
+            if listing.manually_excluded:
+                return (
+                    "Active listing, but manually excluded "
+                    "from relisting selection."
+                )
+
+            return (
+                "Active and available for relisting "
+                "when it meets your queue rules."
+            )
+
+        if listing.status == ListingStatus.PAUSED:
+            if listing.paused_indefinitely:
+                return (
+                    "Paused indefinitely. Restore it to Active "
+                    "when you want it available again."
+                )
+
+            if listing.paused_until is not None:
+                return (
+                    "Paused until "
+                    f"{listing.paused_until:%d %B %Y}."
+                )
+
+            return (
+                "This listing is currently paused."
+            )
+
+        if listing.status == ListingStatus.SOLD:
+            return (
+                "Marked as sold. Its information and photos "
+                "are still stored locally."
+            )
+
+        if listing.status == ListingStatus.ARCHIVED:
+            return (
+                "Archived locally and excluded from relisting."
+            )
+
+        return (
+            f"Current status: "
+            f"{listing.status.value.capitalize()}"
         )
+
+    # =====================================================
+    # Lifecycle actions
+    # =====================================================
 
     def _pause(
         self,
@@ -390,7 +896,9 @@ class ListingLifecycleDialog(QDialog):
 
         self.accept()
 
-    def _restore(self) -> None:
+    def _restore(
+        self,
+    ) -> None:
         try:
             restore_to_active(
                 self.listing_id
@@ -460,7 +968,9 @@ class ListingLifecycleDialog(QDialog):
 
         self.accept()
 
-    def _mark_sold(self) -> None:
+    def _mark_sold(
+        self,
+    ) -> None:
         answer = QMessageBox.question(
             self,
             "Mark as Sold",
@@ -502,7 +1012,9 @@ class ListingLifecycleDialog(QDialog):
 
         self.accept()
 
-    def _archive(self) -> None:
+    def _archive(
+        self,
+    ) -> None:
         answer = QMessageBox.question(
             self,
             "Archive Listing",
@@ -544,7 +1056,9 @@ class ListingLifecycleDialog(QDialog):
 
         self.accept()
 
-    def _delete_permanently(self) -> None:
+    def _delete_permanently(
+        self,
+    ) -> None:
         answer = QMessageBox.warning(
             self,
             "Delete this listing permanently?",
@@ -601,82 +1115,10 @@ class ListingLifecycleDialog(QDialog):
 
         self.accept()
 
-    def _apply_styles(self) -> None:
-        self.setStyleSheet(
-            """
-            QDialog {
-                background-color: #f5f6f8;
-                color: #111827;
-            }
-
-            QWidget {
-                font-family: "Segoe UI";
-                font-size: 14px;
-                color: #111827;
-            }
-
-            #listingTitle {
-                font-size: 21px;
-                font-weight: 700;
-            }
-
-            #currentStatus {
-                color: #374151;
-                font-size: 15px;
-                font-weight: 600;
-            }
-
-            #informationText {
-                color: #6b7280;
-            }
-
-            #warningText {
-                color: #92400e;
-                background-color: #fffbeb;
-                border: 1px solid #fde68a;
-                border-radius: 6px;
-                padding: 8px;
-            }
-
-            #actionButton,
-            #secondaryButton {
-                background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 7px;
-                padding: 10px 14px;
-                font-weight: 600;
-            }
-
-            #actionButton:hover,
-            #secondaryButton:hover {
-                background-color: #f3f4f6;
-            }
-
-            #primaryButton {
-                background-color: #1f2937;
-                color: white;
-                border: none;
-                border-radius: 7px;
-                padding: 10px 14px;
-                font-weight: 700;
-            }
-
-            #primaryButton:hover {
-                background-color: #374151;
-            }
-
-            #destructiveButton {
-                background-color: #b91c1c;
-                color: white;
-                border: none;
-                border-radius: 7px;
-                padding: 10px 14px;
-                font-weight: 700;
-            }
-
-            #destructiveButton:hover {
-                background-color: #991b1b;
-            }
-            """
-        )
+    def _apply_styles(
+        self,
+    ) -> None:
+        """
+        ThemeManager owns the application appearance.
+        """
+        return
