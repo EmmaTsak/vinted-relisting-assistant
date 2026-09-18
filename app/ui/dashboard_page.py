@@ -23,7 +23,7 @@ from app.services.statistics_service import (
 
 class StatisticCard(QFrame):
     """
-    Small dashboard statistic card.
+    Compact high-level dashboard statistic.
     """
 
     def __init__(
@@ -41,15 +41,19 @@ class StatisticCard(QFrame):
             "statisticCard"
         )
 
+        self.setMinimumHeight(
+            112
+        )
+
         layout = QVBoxLayout(
             self
         )
 
         layout.setContentsMargins(
-            16,
-            14,
-            16,
-            14,
+            18,
+            15,
+            18,
+            15,
         )
 
         layout.setSpacing(
@@ -100,9 +104,94 @@ class StatisticCard(QFrame):
         layout.addStretch()
 
 
+class HealthMetric(QFrame):
+    """
+    Smaller inventory-health statistic.
+    """
+
+    def __init__(
+        self,
+        title: str,
+        value: str,
+        subtitle: str = "",
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(
+            parent
+        )
+
+        self.setObjectName(
+            "attentionItem"
+        )
+
+        layout = QVBoxLayout(
+            self
+        )
+
+        layout.setContentsMargins(
+            14,
+            12,
+            14,
+            12,
+        )
+
+        layout.setSpacing(
+            3
+        )
+
+        title_label = QLabel(
+            title
+        )
+
+        title_label.setObjectName(
+            "statisticTitle"
+        )
+
+        value_label = QLabel(
+            value
+        )
+
+        value_label.setObjectName(
+            "summaryValue"
+        )
+
+        layout.addWidget(
+            title_label
+        )
+
+        layout.addWidget(
+            value_label
+        )
+
+        if subtitle:
+            subtitle_label = QLabel(
+                subtitle
+            )
+
+            subtitle_label.setObjectName(
+                "statisticSubtitle"
+            )
+
+            subtitle_label.setWordWrap(
+                True
+            )
+
+            layout.addWidget(
+                subtitle_label
+            )
+
+        layout.addStretch()
+
+
 class DashboardPage(QWidget):
     """
-    Main statistics dashboard.
+    Main command-centre dashboard.
+
+    Shows:
+    - high-level inventory statistics
+    - inventory health
+    - listings needing attention
+    - recent relisting activity
     """
 
     edit_requested = Signal(int)
@@ -119,7 +208,9 @@ class DashboardPage(QWidget):
 
         self._build_ui()
 
-    def _build_ui(self) -> None:
+    def _build_ui(
+        self,
+    ) -> None:
         root_layout = QVBoxLayout(
             self
         )
@@ -132,53 +223,12 @@ class DashboardPage(QWidget):
         )
 
         root_layout.setSpacing(
-            14
+            0
         )
 
-        top_row = QHBoxLayout()
-
-        introduction = QLabel(
-            (
-                "Overview of your local inventory "
-                "and relisting activity."
-            )
+        self.scroll_area = (
+            QScrollArea()
         )
-
-        introduction.setObjectName(
-            "dashboardIntroduction"
-        )
-
-        refresh_button = QPushButton(
-            "REFRESH"
-        )
-
-        refresh_button.setObjectName(
-            "dashboardRefreshButton"
-        )
-
-        refresh_button.setCursor(
-            Qt.CursorShape.PointingHandCursor
-        )
-
-        refresh_button.clicked.connect(
-            self.refresh
-        )
-
-        top_row.addWidget(
-            introduction
-        )
-
-        top_row.addStretch()
-
-        top_row.addWidget(
-            refresh_button
-        )
-
-        root_layout.addLayout(
-            top_row
-        )
-
-        self.scroll_area = QScrollArea()
 
         self.scroll_area.setWidgetResizable(
             True
@@ -202,49 +252,199 @@ class DashboardPage(QWidget):
             0,
             0,
             8,
-            0,
+            10,
         )
 
         self.content_layout.setSpacing(
-            16
+            18
         )
 
-        self.cards_container = QWidget()
+        self._build_primary_statistics()
 
-        self.cards_layout = QGridLayout(
-            self.cards_container
+        self._build_health_section()
+
+        self._build_lower_section()
+
+        self.content_layout.addStretch()
+
+        self.scroll_area.setWidget(
+            self.content
         )
 
-        self.cards_layout.setContentsMargins(
+        root_layout.addWidget(
+            self.scroll_area,
+            1,
+        )
+
+        self.refresh()
+
+    def _build_primary_statistics(
+        self,
+    ) -> None:
+        self.primary_cards_container = (
+            QWidget()
+        )
+
+        self.primary_cards_layout = (
+            QGridLayout(
+                self.primary_cards_container
+            )
+        )
+
+        self.primary_cards_layout.setContentsMargins(
             0,
             0,
             0,
             0,
         )
 
-        self.cards_layout.setHorizontalSpacing(
+        self.primary_cards_layout.setHorizontalSpacing(
             12
         )
 
-        self.cards_layout.setVerticalSpacing(
+        self.primary_cards_layout.setVerticalSpacing(
             12
         )
 
         for column in range(
             4
         ):
-            self.cards_layout.setColumnStretch(
+            self.primary_cards_layout.setColumnStretch(
                 column,
                 1,
             )
 
         self.content_layout.addWidget(
-            self.cards_container
+            self.primary_cards_container
         )
 
-        lower_row = QHBoxLayout()
+    def _build_health_section(
+        self,
+    ) -> None:
+        self.health_panel = QFrame()
 
-        lower_row.setSpacing(
+        self.health_panel.setObjectName(
+            "dashboardPanel"
+        )
+
+        layout = QVBoxLayout(
+            self.health_panel
+        )
+
+        layout.setContentsMargins(
+            18,
+            16,
+            18,
+            16,
+        )
+
+        layout.setSpacing(
+            12
+        )
+
+        heading_row = QHBoxLayout()
+
+        heading = QLabel(
+            "INVENTORY HEALTH"
+        )
+
+        heading.setObjectName(
+            "panelHeading"
+        )
+
+        explanation = QLabel(
+            (
+                "Age is measured from the last relist, "
+                "or the original listing date if never relisted."
+            )
+        )
+
+        explanation.setObjectName(
+            "panelMessage"
+        )
+
+        explanation.setWordWrap(
+            True
+        )
+
+        heading_row.addWidget(
+            heading
+        )
+
+        heading_row.addSpacing(
+            12
+        )
+
+        heading_row.addWidget(
+            explanation,
+            1,
+        )
+
+        layout.addLayout(
+            heading_row
+        )
+
+        self.health_metrics_container = (
+            QWidget()
+        )
+
+        self.health_metrics_layout = (
+            QGridLayout(
+                self.health_metrics_container
+            )
+        )
+
+        self.health_metrics_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        self.health_metrics_layout.setHorizontalSpacing(
+            10
+        )
+
+        self.health_metrics_layout.setVerticalSpacing(
+            10
+        )
+
+        for column in range(
+            4
+        ):
+            self.health_metrics_layout.setColumnStretch(
+                column,
+                1,
+            )
+
+        layout.addWidget(
+            self.health_metrics_container
+        )
+
+        self.average_interval_label = QLabel()
+
+        self.average_interval_label.setObjectName(
+            "informationText"
+        )
+
+        self.average_interval_label.setWordWrap(
+            True
+        )
+
+        layout.addWidget(
+            self.average_interval_label
+        )
+
+        self.content_layout.addWidget(
+            self.health_panel
+        )
+
+    def _build_lower_section(
+        self,
+    ) -> None:
+        lower_layout = QHBoxLayout()
+
+        lower_layout.setSpacing(
             14
         )
 
@@ -260,34 +460,19 @@ class DashboardPage(QWidget):
             )
         )
 
-        lower_row.addWidget(
+        lower_layout.addWidget(
             self.attention_panel,
             1,
         )
 
-        lower_row.addWidget(
+        lower_layout.addWidget(
             self.activity_panel,
             1,
         )
 
         self.content_layout.addLayout(
-            lower_row
+            lower_layout
         )
-
-        self.content_layout.addStretch()
-
-        self.scroll_area.setWidget(
-            self.content
-        )
-
-        root_layout.addWidget(
-            self.scroll_area,
-            1,
-        )
-
-        self._apply_styles()
-
-        self.refresh()
 
     def _create_panel(
         self,
@@ -328,10 +513,6 @@ class DashboardPage(QWidget):
 
         content = QWidget()
 
-        content.setObjectName(
-            "panelContent"
-        )
-
         content_layout = QVBoxLayout(
             content
         )
@@ -344,7 +525,7 @@ class DashboardPage(QWidget):
         )
 
         content_layout.setSpacing(
-            10
+            9
         )
 
         content_layout.addStretch()
@@ -354,15 +535,25 @@ class DashboardPage(QWidget):
             1,
         )
 
-        panel.content_layout = content_layout
+        panel.content_layout = (
+            content_layout
+        )
 
         return panel
 
-    def refresh(self) -> None:
+    def refresh(
+        self,
+    ) -> None:
         """
-        Reload all dashboard statistics.
+        Reload all dashboard information from SQLite.
         """
-        self._clear_stat_cards()
+        self._clear_layout(
+            self.primary_cards_layout
+        )
+
+        self._clear_layout(
+            self.health_metrics_layout
+        )
 
         self._clear_panel(
             self.attention_panel
@@ -386,14 +577,14 @@ class DashboardPage(QWidget):
             )
 
             error.setObjectName(
-                "dashboardError"
+                "historyError"
             )
 
             error.setWordWrap(
                 True
             )
 
-            self.cards_layout.addWidget(
+            self.primary_cards_layout.addWidget(
                 error,
                 0,
                 0,
@@ -403,7 +594,11 @@ class DashboardPage(QWidget):
 
             return
 
-        self._populate_stat_cards(
+        self._populate_primary_statistics(
+            statistics
+        )
+
+        self._populate_health_section(
             statistics
         )
 
@@ -415,135 +610,136 @@ class DashboardPage(QWidget):
             statistics
         )
 
-    def _populate_stat_cards(
+    def _populate_primary_statistics(
         self,
         statistics: DashboardStatistics,
     ) -> None:
-        average_text = (
-            (
-                f"{statistics.average_days_between_relists:.1f}"
-            )
-            if (
-                statistics.average_days_between_relists
-                is not None
-            )
-            else "—"
+        queue_subtitle = (
+            f"{statistics.completed_today} completed today"
         )
 
-        values = [
+        cards = [
             (
-                "Active Listings",
+                "ACTIVE LISTINGS",
                 str(
                     statistics.active_listings
                 ),
-                "Currently active inventory",
+                "Current active inventory",
             ),
             (
-                "Today's Queue",
+                "TODAY'S QUEUE",
                 str(
                     statistics.queued_today
                 ),
-                (
-                    f"{statistics.completed_today} "
-                    "completed today"
-                ),
+                queue_subtitle,
             ),
             (
-                "Relisted This Week",
+                "RELISTED THIS WEEK",
                 str(
                     statistics.relisted_this_week
                 ),
                 "Confirmed through this app",
             ),
             (
-                "Relisted This Month",
-                str(
-                    statistics.relisted_this_month
-                ),
-                "Confirmed through this app",
-            ),
-            (
-                "Sold Items",
+                "SOLD",
                 str(
                     statistics.sold_items
                 ),
                 "Retained in local inventory",
             ),
-            (
-                "Never Relisted",
-                str(
-                    statistics.never_relisted
-                ),
-                "Active listings",
-            ),
-            (
-                "30+ Days",
-                str(
-                    statistics.older_than_30_days
-                ),
-                (
-                    "Active listings since "
-                    "last refresh"
-                ),
-            ),
-            (
-                "60+ Days",
-                str(
-                    statistics.older_than_60_days
-                ),
-                (
-                    "Active listings since "
-                    "last refresh"
-                ),
-            ),
-            (
-                "90+ Days",
-                str(
-                    statistics.older_than_90_days
-                ),
-                (
-                    "Active listings since "
-                    "last refresh"
-                ),
-            ),
-            (
-                "Avg. Days Between Relists",
-                average_text,
-                (
-                    "Uses only known recorded "
-                    "date intervals"
-                ),
-            ),
         ]
 
-        for index, (
+        for column, (
             title,
             value,
             subtitle,
         ) in enumerate(
-            values
+            cards
         ):
-            row = (
-                index
-                // 4
-            )
-
-            column = (
-                index
-                % 4
-            )
-
             card = StatisticCard(
                 title=title,
                 value=value,
                 subtitle=subtitle,
             )
 
-            self.cards_layout.addWidget(
+            self.primary_cards_layout.addWidget(
                 card,
-                row,
+                0,
                 column,
             )
+
+    def _populate_health_section(
+        self,
+        statistics: DashboardStatistics,
+    ) -> None:
+        metrics = [
+            (
+                "NEVER RELISTED",
+                str(
+                    statistics.never_relisted
+                ),
+                "Active listings",
+            ),
+            (
+                "30+ DAYS",
+                str(
+                    statistics.older_than_30_days
+                ),
+                "Since last refresh",
+            ),
+            (
+                "60+ DAYS",
+                str(
+                    statistics.older_than_60_days
+                ),
+                "Since last refresh",
+            ),
+            (
+                "90+ DAYS",
+                str(
+                    statistics.older_than_90_days
+                ),
+                "Since last refresh",
+            ),
+        ]
+
+        for column, (
+            title,
+            value,
+            subtitle,
+        ) in enumerate(
+            metrics
+        ):
+            metric = HealthMetric(
+                title=title,
+                value=value,
+                subtitle=subtitle,
+            )
+
+            self.health_metrics_layout.addWidget(
+                metric,
+                0,
+                column,
+            )
+
+        if (
+            statistics.average_days_between_relists
+            is None
+        ):
+            average_text = (
+                "Average between known relists: "
+                "not enough recorded history yet."
+            )
+
+        else:
+            average_text = (
+                "Average between known relists: "
+                f"{statistics.average_days_between_relists:.1f} days."
+            )
+
+        self.average_interval_label.setText(
+            average_text
+        )
 
     def _populate_attention_panel(
         self,
@@ -569,86 +765,96 @@ class DashboardPage(QWidget):
             )
 
             oldest_layout.setContentsMargins(
+                14,
                 12,
-                10,
+                14,
                 12,
-                10,
             )
 
-            oldest_heading = QLabel(
-                "Oldest listing needing refresh"
+            oldest_layout.setSpacing(
+                5
             )
 
-            oldest_heading.setObjectName(
+            heading = QLabel(
+                "OLDEST LISTING"
+            )
+
+            heading.setObjectName(
                 "attentionHeading"
             )
 
-            oldest_title = QLabel(
+            title = QLabel(
                 (
                     statistics.oldest_listing_title
                     or "Unknown listing"
                 )
             )
 
-            oldest_title.setObjectName(
+            title.setObjectName(
                 "attentionTitle"
             )
 
-            oldest_title.setWordWrap(
+            title.setWordWrap(
                 True
             )
 
-            oldest_days = QLabel(
+            days = QLabel(
                 (
                     f"{statistics.oldest_listing_days} "
                     "days since last refresh"
                 )
             )
 
-            oldest_days.setObjectName(
+            days.setObjectName(
                 "attentionText"
             )
 
-            oldest_button = QPushButton(
-                "VIEW / EDIT"
+            view_button = QPushButton(
+                "VIEW / EDIT LISTING"
             )
 
-            oldest_button.setObjectName(
+            view_button.setObjectName(
                 "smallButton"
+            )
+
+            view_button.setCursor(
+                Qt.CursorShape.PointingHandCursor
             )
 
             listing_id = (
                 statistics.oldest_listing_id
             )
 
-            oldest_button.clicked.connect(
+            view_button.clicked.connect(
                 lambda checked=False,
-                target_id=listing_id: (
-                    self.edit_requested.emit(
-                        target_id
-                    )
+                target_id=listing_id:
+                self.edit_requested.emit(
+                    target_id
                 )
             )
 
             oldest_layout.addWidget(
-                oldest_heading
+                heading
             )
 
             oldest_layout.addWidget(
-                oldest_title
+                title
             )
 
             oldest_layout.addWidget(
-                oldest_days
+                days
             )
 
             oldest_layout.addWidget(
-                oldest_button
+                view_button
             )
 
             layout.insertWidget(
-                0,
-                oldest
+                max(
+                    0,
+                    layout.count() - 1,
+                ),
+                oldest,
             )
 
         else:
@@ -672,14 +878,18 @@ class DashboardPage(QWidget):
             )
 
             most_layout.setContentsMargins(
+                14,
                 12,
-                10,
+                14,
                 12,
-                10,
+            )
+
+            most_layout.setSpacing(
+                5
             )
 
             heading = QLabel(
-                "Most frequently relisted"
+                "MOST FREQUENTLY RELISTED"
             )
 
             heading.setObjectName(
@@ -714,24 +924,26 @@ class DashboardPage(QWidget):
             )
 
             view_button = QPushButton(
-                "VIEW / EDIT"
+                "VIEW / EDIT LISTING"
             )
 
             view_button.setObjectName(
                 "smallButton"
             )
 
+            view_button.setCursor(
+                Qt.CursorShape.PointingHandCursor
+            )
+
             listing_id = (
-                statistics
-                .most_relisted_listing_id
+                statistics.most_relisted_listing_id
             )
 
             view_button.clicked.connect(
                 lambda checked=False,
-                target_id=listing_id: (
-                    self.edit_requested.emit(
-                        target_id
-                    )
+                target_id=listing_id:
+                self.edit_requested.emit(
+                    target_id
                 )
             )
 
@@ -751,13 +963,11 @@ class DashboardPage(QWidget):
                 view_button
             )
 
-            insert_position = max(
-                0,
-                layout.count() - 1,
-            )
-
             layout.insertWidget(
-                insert_position,
+                max(
+                    0,
+                    layout.count() - 1,
+                ),
                 most_relisted,
             )
 
@@ -767,6 +977,10 @@ class DashboardPage(QWidget):
 
         queue_button.setObjectName(
             "panelActionButton"
+        )
+
+        queue_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
         )
 
         queue_button.clicked.connect(
@@ -814,13 +1028,21 @@ class DashboardPage(QWidget):
                 )
 
                 row_layout.setContentsMargins(
-                    10,
-                    8,
-                    10,
-                    8,
+                    12,
+                    9,
+                    12,
+                    9,
+                )
+
+                row_layout.setSpacing(
+                    10
                 )
 
                 details = QVBoxLayout()
+
+                details.setSpacing(
+                    3
+                )
 
                 title = QLabel(
                     record.title
@@ -857,29 +1079,32 @@ class DashboardPage(QWidget):
                     1,
                 )
 
-                edit_button = QPushButton(
+                view_button = QPushButton(
                     "VIEW"
                 )
 
-                edit_button.setObjectName(
+                view_button.setObjectName(
                     "smallButton"
+                )
+
+                view_button.setCursor(
+                    Qt.CursorShape.PointingHandCursor
                 )
 
                 listing_id = (
                     record.listing_id
                 )
 
-                edit_button.clicked.connect(
+                view_button.clicked.connect(
                     lambda checked=False,
-                    target_id=listing_id: (
-                        self.edit_requested.emit(
-                            target_id
-                        )
+                    target_id=listing_id:
+                    self.edit_requested.emit(
+                        target_id
                     )
                 )
 
                 row_layout.addWidget(
-                    edit_button
+                    view_button
                 )
 
                 layout.insertWidget(
@@ -896,6 +1121,10 @@ class DashboardPage(QWidget):
 
         history_button.setObjectName(
             "panelActionButton"
+        )
+
+        history_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
         )
 
         history_button.clicked.connect(
@@ -915,40 +1144,25 @@ class DashboardPage(QWidget):
         layout: QVBoxLayout,
         text: str,
     ) -> None:
-        label = QLabel(
+        message = QLabel(
             text
         )
 
-        label.setObjectName(
+        message.setObjectName(
             "panelMessage"
         )
 
-        label.setWordWrap(
+        message.setWordWrap(
             True
         )
 
         layout.insertWidget(
-            0,
-            label,
+            max(
+                0,
+                layout.count() - 1,
+            ),
+            message,
         )
-
-    def _clear_stat_cards(
-        self,
-    ) -> None:
-        while (
-            self.cards_layout.count()
-            > 0
-        ):
-            item = (
-                self.cards_layout.takeAt(
-                    0
-                )
-            )
-
-            widget = item.widget()
-
-            if widget is not None:
-                widget.deleteLater()
 
     def _clear_panel(
         self,
@@ -971,112 +1185,19 @@ class DashboardPage(QWidget):
             if widget is not None:
                 widget.deleteLater()
 
-    def _apply_styles(self) -> None:
-        self.setStyleSheet(
-            """
-            #dashboardIntroduction {
-                color: #6b7280;
-                font-size: 14px;
-            }
+    def _clear_layout(
+        self,
+        layout: QGridLayout,
+    ) -> None:
+        while (
+            layout.count()
+            > 0
+        ):
+            item = layout.takeAt(
+                0
+            )
 
-            #dashboardRefreshButton {
-                background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px 14px;
-                font-weight: 600;
-            }
+            widget = item.widget()
 
-            #dashboardRefreshButton:hover {
-                background-color: #f3f4f6;
-            }
-
-            #statisticCard {
-                background-color: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 10px;
-                min-height: 105px;
-            }
-
-            #statisticTitle {
-                color: #6b7280;
-                font-size: 12px;
-                font-weight: 600;
-            }
-
-            #statisticValue {
-                color: #111827;
-                font-size: 28px;
-                font-weight: 700;
-            }
-
-            #statisticSubtitle {
-                color: #9ca3af;
-                font-size: 11px;
-            }
-
-            #dashboardPanel {
-                background-color: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 10px;
-                min-height: 280px;
-            }
-
-            #panelHeading {
-                color: #4b5563;
-                font-size: 13px;
-                font-weight: 700;
-            }
-
-            #attentionItem,
-            #activityRow {
-                background-color: #f9fafb;
-                border: 1px solid #e5e7eb;
-                border-radius: 7px;
-            }
-
-            #attentionHeading {
-                color: #6b7280;
-                font-size: 11px;
-                font-weight: 700;
-            }
-
-            #attentionTitle,
-            #activityTitle {
-                color: #111827;
-                font-size: 14px;
-                font-weight: 600;
-            }
-
-            #attentionText,
-            #activityDate,
-            #panelMessage {
-                color: #6b7280;
-                font-size: 12px;
-            }
-
-            #smallButton,
-            #panelActionButton {
-                background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 7px 11px;
-                font-weight: 600;
-            }
-
-            #smallButton:hover,
-            #panelActionButton:hover {
-                background-color: #f3f4f6;
-            }
-
-            #dashboardError {
-                background-color: #fef2f2;
-                color: #991b1b;
-                border: 1px solid #fecaca;
-                border-radius: 10px;
-                padding: 30px;
-            }
-            """
-        )
+            if widget is not None:
+                widget.deleteLater()

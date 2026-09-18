@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from datetime import date
+
+from PySide6.QtCore import (
+    Qt,
+    Signal,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -18,9 +23,9 @@ from app.services.history_service import (
 )
 
 
-class HistoryCard(QFrame):
+class HistoryRecordRow(QFrame):
     """
-    Visual representation of one successful relisting event.
+    Compact relisting entry displayed inside one date group.
     """
 
     edit_requested = Signal(int)
@@ -37,94 +42,33 @@ class HistoryCard(QFrame):
         self.record = record
 
         self.setObjectName(
-            "historyCard"
+            "activityRow"
         )
 
         self._build_ui()
-        self._apply_styles()
 
-    def _build_ui(self) -> None:
+    def _build_ui(
+        self,
+    ) -> None:
         layout = QHBoxLayout(
             self
         )
 
         layout.setContentsMargins(
-            18,
-            16,
-            18,
-            16,
+            14,
+            11,
+            14,
+            11,
         )
 
         layout.setSpacing(
-            18
-        )
-
-        date_box = QFrame()
-
-        date_box.setObjectName(
-            "historyDateBox"
-        )
-
-        date_box.setFixedSize(
-            90,
-            82,
-        )
-
-        date_layout = QVBoxLayout(
-            date_box
-        )
-
-        date_layout.setContentsMargins(
-            6,
-            8,
-            6,
-            8,
-        )
-
-        day = QLabel(
-            self.record.relisted_date.strftime(
-                "%d"
-            )
-        )
-
-        day.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
-
-        day.setObjectName(
-            "historyDay"
-        )
-
-        month = QLabel(
-            self.record.relisted_date.strftime(
-                "%b %Y"
-            )
-        )
-
-        month.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
-
-        month.setObjectName(
-            "historyMonth"
-        )
-
-        date_layout.addWidget(
-            day
-        )
-
-        date_layout.addWidget(
-            month
-        )
-
-        layout.addWidget(
-            date_box
+            14
         )
 
         information = QVBoxLayout()
 
         information.setSpacing(
-            5
+            4
         )
 
         title = QLabel(
@@ -143,81 +87,20 @@ class HistoryCard(QFrame):
             title
         )
 
-        relisted_text = QLabel(
-            (
-                "Relisted on "
-                f"{self.record.relisted_date:%d %B %Y}"
-            )
+        details = QLabel(
+            self._build_details_text()
         )
 
-        relisted_text.setObjectName(
-            "historyPrimaryText"
-        )
-
-        information.addWidget(
-            relisted_text
-        )
-
-        if (
-            self.record.previous_relisted_date
-            is None
-        ):
-            previous_text = (
-                "Previous relist: none recorded"
-            )
-
-        else:
-            previous_text = (
-                "Previous relist: "
-                f"{self.record.previous_relisted_date:%d %B %Y}"
-            )
-
-            if (
-                self.record.days_since_previous
-                is not None
-            ):
-                previous_text += (
-                    "  •  "
-                    f"{self.record.days_since_previous} "
-                    "days between relists"
-                )
-
-        previous = QLabel(
-            previous_text
-        )
-
-        previous.setObjectName(
+        details.setObjectName(
             "historySecondaryText"
         )
 
-        previous.setWordWrap(
+        details.setWordWrap(
             True
         )
 
         information.addWidget(
-            previous
-        )
-
-        recorded = QLabel(
-            (
-                "Recorded in assistant: "
-                f"{self.record.recorded_at:%d %b %Y %H:%M}"
-                "  •  "
-                "Current total relist count: "
-                f"{self.record.current_relist_count}"
-            )
-        )
-
-        recorded.setObjectName(
-            "historySecondaryText"
-        )
-
-        recorded.setWordWrap(
-            True
-        )
-
-        information.addWidget(
-            recorded
+            details
         )
 
         layout.addLayout(
@@ -237,86 +120,288 @@ class HistoryCard(QFrame):
             Qt.CursorShape.PointingHandCursor
         )
 
+        edit_button.setMinimumWidth(
+            100
+        )
+
         edit_button.clicked.connect(
-            lambda: self.edit_requested.emit(
-                self.record.listing_id
+            lambda: (
+                self.edit_requested.emit(
+                    self.record.listing_id
+                )
             )
         )
 
         layout.addWidget(
-            edit_button,
+            edit_button
+        )
+
+    def _build_details_text(
+        self,
+    ) -> str:
+        values: list[str] = []
+
+        values.append(
+            (
+                "Recorded "
+                f"{self.record.recorded_at:%H:%M}"
+            )
+        )
+
+        if (
+            self.record.previous_relisted_date
+            is None
+        ):
+            values.append(
+                "First recorded relist"
+            )
+
+        else:
+            previous_text = (
+                "Previous: "
+                f"{self.record.previous_relisted_date:%d %b %Y}"
+            )
+
+            if (
+                self.record.days_since_previous
+                is not None
+            ):
+                previous_text += (
+                    " · "
+                    f"{self.record.days_since_previous} "
+                    "days apart"
+                )
+
+            values.append(
+                previous_text
+            )
+
+        values.append(
+            (
+                "Current total: "
+                f"{self.record.current_relist_count}"
+            )
+        )
+
+        return "   •   ".join(
+            values
+        )
+
+
+class HistoryDayGroup(QFrame):
+    """
+    Collapsible collection of relisting records for one day.
+    """
+
+    edit_requested = Signal(int)
+
+    def __init__(
+        self,
+        relisted_date: date,
+        records: list[HistoryRecord],
+        expanded: bool = False,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(
+            parent
+        )
+
+        self.relisted_date = (
+            relisted_date
+        )
+
+        self.records = records
+
+        self.setObjectName(
+            "historyCard"
+        )
+
+        self._build_ui(
+            expanded=expanded
+        )
+
+    def _build_ui(
+        self,
+        expanded: bool,
+    ) -> None:
+        layout = QVBoxLayout(
+            self
+        )
+
+        layout.setContentsMargins(
             0,
-            Qt.AlignmentFlag.AlignTop,
+            0,
+            0,
+            0,
         )
 
-    def _apply_styles(self) -> None:
-        self.setStyleSheet(
-            """
-            #historyCard {
-                background-color: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 10px;
-            }
-
-            #historyCard:hover {
-                border: 1px solid #cbd5e1;
-            }
-
-            #historyDateBox {
-                background-color: #f3f4f6;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-            }
-
-            #historyDay {
-                color: #111827;
-                font-size: 25px;
-                font-weight: 700;
-            }
-
-            #historyMonth {
-                color: #6b7280;
-                font-size: 12px;
-                font-weight: 600;
-            }
-
-            #historyTitle {
-                color: #111827;
-                font-size: 17px;
-                font-weight: 700;
-            }
-
-            #historyPrimaryText {
-                color: #374151;
-                font-size: 14px;
-                font-weight: 600;
-            }
-
-            #historySecondaryText {
-                color: #6b7280;
-                font-size: 12px;
-            }
-
-            #historyEditButton {
-                background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px 13px;
-                min-width: 100px;
-                font-weight: 600;
-            }
-
-            #historyEditButton:hover {
-                background-color: #f3f4f6;
-            }
-            """
+        layout.setSpacing(
+            0
         )
+
+        header = QFrame()
+
+        header.setObjectName(
+            "historyDateBox"
+        )
+
+        header_layout = QHBoxLayout(
+            header
+        )
+
+        header_layout.setContentsMargins(
+            16,
+            11,
+            12,
+            11,
+        )
+
+        header_layout.setSpacing(
+            10
+        )
+
+        date_label = QLabel(
+            self.relisted_date.strftime(
+                "%A, %d %B %Y"
+            )
+        )
+
+        date_label.setObjectName(
+            "historyPrimaryText"
+        )
+
+        header_layout.addWidget(
+            date_label
+        )
+
+        count = len(
+            self.records
+        )
+
+        if count == 1:
+            count_text = (
+                "1 relist"
+            )
+
+        else:
+            count_text = (
+                f"{count} relists"
+            )
+
+        count_label = QLabel(
+            count_text
+        )
+
+        count_label.setObjectName(
+            "historySecondaryText"
+        )
+
+        header_layout.addWidget(
+            count_label
+        )
+
+        header_layout.addStretch()
+
+        self.toggle_button = QPushButton()
+
+        self.toggle_button.setObjectName(
+            "smallButton"
+        )
+
+        self.toggle_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        self.toggle_button.setCheckable(
+            True
+        )
+
+        self.toggle_button.setChecked(
+            expanded
+        )
+
+        self.toggle_button.setMinimumWidth(
+            94
+        )
+
+        self.toggle_button.toggled.connect(
+            self._set_expanded
+        )
+
+        header_layout.addWidget(
+            self.toggle_button
+        )
+
+        layout.addWidget(
+            header
+        )
+
+        self.records_container = QWidget()
+
+        records_layout = QVBoxLayout(
+            self.records_container
+        )
+
+        records_layout.setContentsMargins(
+            12,
+            10,
+            12,
+            12,
+        )
+
+        records_layout.setSpacing(
+            8
+        )
+
+        for record in self.records:
+            row = HistoryRecordRow(
+                record
+            )
+
+            row.edit_requested.connect(
+                self.edit_requested.emit
+            )
+
+            records_layout.addWidget(
+                row
+            )
+
+        layout.addWidget(
+            self.records_container
+        )
+
+        self._set_expanded(
+            expanded
+        )
+
+    def _set_expanded(
+        self,
+        expanded: bool,
+    ) -> None:
+        self.records_container.setVisible(
+            expanded
+        )
+
+        self.toggle_button.setChecked(
+            expanded
+        )
+
+        if expanded:
+            self.toggle_button.setText(
+                "COLLAPSE"
+            )
+
+        else:
+            self.toggle_button.setText(
+                "EXPAND"
+            )
 
 
 class HistoryPage(QWidget):
     """
-    Complete recorded relisting history page.
+    Recorded relisting history grouped into collapsible days.
+
+    Every date group starts collapsed.
     """
 
     edit_requested = Signal(int)
@@ -331,7 +416,9 @@ class HistoryPage(QWidget):
 
         self._build_ui()
 
-    def _build_ui(self) -> None:
+    def _build_ui(
+        self,
+    ) -> None:
         layout = QVBoxLayout(
             self
         )
@@ -392,22 +479,6 @@ class HistoryPage(QWidget):
             "summaryValue"
         )
 
-        refresh_button = QPushButton(
-            "REFRESH"
-        )
-
-        refresh_button.setObjectName(
-            "historyRefreshButton"
-        )
-
-        refresh_button.setCursor(
-            Qt.CursorShape.PointingHandCursor
-        )
-
-        refresh_button.clicked.connect(
-            self.refresh
-        )
-
         summary_layout.addWidget(
             self.total_label
         )
@@ -422,20 +493,15 @@ class HistoryPage(QWidget):
 
         summary_layout.addStretch()
 
-        summary_layout.addWidget(
-            refresh_button
-        )
-
         layout.addWidget(
             self.summary_frame
         )
 
         explanation = QLabel(
             (
-                "History contains relists confirmed through "
-                "Vinted Relisting Assistant. Existing relist counts "
-                "imported without dates are not converted into "
-                "made-up history records."
+                "Relisting activity is grouped by day. "
+                "Expand a date to see the individual listings "
+                "relisted on that day."
             )
         )
 
@@ -451,7 +517,9 @@ class HistoryPage(QWidget):
             explanation
         )
 
-        self.scroll_area = QScrollArea()
+        self.scroll_area = (
+            QScrollArea()
+        )
 
         self.scroll_area.setWidgetResizable(
             True
@@ -467,22 +535,22 @@ class HistoryPage(QWidget):
 
         self.container = QWidget()
 
-        self.cards_layout = QVBoxLayout(
+        self.groups_layout = QVBoxLayout(
             self.container
         )
 
-        self.cards_layout.setContentsMargins(
+        self.groups_layout.setContentsMargins(
             0,
             0,
             6,
             0,
         )
 
-        self.cards_layout.setSpacing(
-            12
+        self.groups_layout.setSpacing(
+            10
         )
 
-        self.cards_layout.addStretch()
+        self.groups_layout.addStretch()
 
         self.scroll_area.setWidget(
             self.container
@@ -493,69 +561,21 @@ class HistoryPage(QWidget):
             1,
         )
 
-        self.setStyleSheet(
-            """
-            #historySummary {
-                background-color: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 9px;
-            }
-
-            #summaryValue {
-                color: #111827;
-                font-size: 14px;
-                font-weight: 700;
-            }
-
-            #historyExplanation {
-                color: #6b7280;
-                font-size: 13px;
-            }
-
-            #historyRefreshButton {
-                background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px 14px;
-                font-weight: 600;
-            }
-
-            #historyRefreshButton:hover {
-                background-color: #f3f4f6;
-            }
-
-            #historyEmpty {
-                background-color: white;
-                color: #6b7280;
-                border: 1px solid #e5e7eb;
-                border-radius: 10px;
-                padding: 40px;
-                font-size: 15px;
-            }
-
-            #historyError {
-                background-color: #fef2f2;
-                color: #991b1b;
-                border: 1px solid #fecaca;
-                border-radius: 10px;
-                padding: 25px;
-            }
-            """
-        )
-
         self.refresh()
 
-    def refresh(self) -> None:
-        """
-        Reload history from SQLite.
-        """
-        self._clear_cards()
+    def refresh(
+        self,
+    ) -> None:
+        self._clear_groups()
 
         try:
-            records = get_relist_history()
+            records = (
+                get_relist_history()
+            )
 
-            summary = get_history_summary()
+            summary = (
+                get_history_summary()
+            )
 
         except Exception as exc:
             self.total_label.setText(
@@ -585,7 +605,7 @@ class HistoryPage(QWidget):
                 True
             )
 
-            self.cards_layout.insertWidget(
+            self.groups_layout.insertWidget(
                 0,
                 error,
             )
@@ -635,43 +655,67 @@ class HistoryPage(QWidget):
                 True
             )
 
-            self.cards_layout.insertWidget(
+            self.groups_layout.insertWidget(
                 0,
                 empty,
             )
 
             return
 
-        for index, record in enumerate(
-            records
-        ):
-            card = HistoryCard(
+        grouped: dict[
+            date,
+            list[HistoryRecord],
+        ] = {}
+
+        for record in records:
+            grouped.setdefault(
+                record.relisted_date,
+                [],
+            ).append(
                 record
             )
 
-            card.edit_requested.connect(
+        for index, (
+            relisted_date,
+            day_records,
+        ) in enumerate(
+            grouped.items()
+        ):
+            group = HistoryDayGroup(
+                relisted_date=(
+                    relisted_date
+                ),
+                records=day_records,
+
+                # Every date starts closed.
+                expanded=False,
+            )
+
+            group.edit_requested.connect(
                 self.edit_requested.emit
             )
 
-            self.cards_layout.insertWidget(
+            self.groups_layout.insertWidget(
                 index,
-                card,
+                group,
             )
 
-    def _clear_cards(self) -> None:
-        """
-        Remove existing history cards while retaining the
-        final stretch item.
-        """
+    def _clear_groups(
+        self,
+    ) -> None:
         while (
-            self.cards_layout.count()
+            self.groups_layout.count()
             > 1
         ):
-            item = self.cards_layout.takeAt(
-                0
+            item = (
+                self.groups_layout.takeAt(
+                    0
+                )
             )
 
-            widget = item.widget()
+            widget = (
+                item.widget()
+            )
 
             if widget is not None:
                 widget.deleteLater()

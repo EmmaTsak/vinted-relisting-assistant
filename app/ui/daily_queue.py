@@ -4,9 +4,6 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import (
-    QPixmap,
-)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -37,14 +34,19 @@ from app.services.queue_service import (
     mark_as_relisted,
     skip_today,
 )
+from app.ui.image_cache import (
+    get_scaled_pixmap,
+)
 
 
 class QueueCard(QFrame):
     """
     One listing card in Today's Queue.
 
-    The parent page can supply preloaded photo metadata so the
-    queue does not perform a separate database query per card.
+    Photo metadata may be supplied by DailyQueuePage so a
+    separate database query is not required for every card.
+
+    Thumbnail pixmaps are cached in memory.
     """
 
     prepare_requested = Signal(int)
@@ -55,8 +57,8 @@ class QueueCard(QFrame):
     def __init__(
         self,
         item: QueueItem,
-        photos: list[ListingPhoto] | None = None,
         parent: QWidget | None = None,
+        photos: list[ListingPhoto] | None = None,
     ) -> None:
         super().__init__(
             parent
@@ -341,12 +343,6 @@ class QueueCard(QFrame):
     def _create_photo_label(
         self,
     ) -> QLabel:
-        """
-        Create the queue thumbnail.
-
-        When the parent supplied photos, no database call is
-        required here.
-        """
         photo_label = QLabel()
 
         photo_label.setFixedSize(
@@ -404,10 +400,10 @@ class QueueCard(QFrame):
                 )
             )
 
-            pixmap = QPixmap(
-                str(
-                    thumbnail
-                )
+            pixmap = get_scaled_pixmap(
+                thumbnail,
+                140,
+                140,
             )
 
             if pixmap.isNull():
@@ -416,17 +412,6 @@ class QueueCard(QFrame):
                 )
 
                 return photo_label
-
-            if (
-                pixmap.width() > 140
-                or pixmap.height() > 140
-            ):
-                pixmap = pixmap.scaled(
-                    140,
-                    140,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
 
             photo_label.setPixmap(
                 pixmap
@@ -684,11 +669,9 @@ class DailyQueuePage(QWidget):
         """
         Refresh today's queue.
 
-        Queue data is loaded first so the existing cards stay visible
-        until replacement data is ready.
-
-        Photo metadata for every queue listing is then fetched with
-        one batch query rather than one database query per card.
+        Photo metadata is loaded with one batch database query.
+        The previous cards remain visible until fresh queue data
+        has been obtained.
         """
         try:
             snapshot = get_today_queue(
@@ -791,7 +774,9 @@ class DailyQueuePage(QWidget):
 
         listing_ids = [
             item.listing.id
-            for item in snapshot.queued_items
+            for item in (
+                snapshot.queued_items
+            )
         ]
 
         try:
@@ -802,9 +787,8 @@ class DailyQueuePage(QWidget):
             )
 
         except Exception:
-            # Photo metadata should not prevent the queue itself
-            # from working. Cards can fall back to their normal
-            # per-listing lookup if the batch query fails.
+            # Queue functionality should continue even if
+            # the batch photo lookup fails.
             photos_by_listing = None
 
         self.message_label.setText(
@@ -824,7 +808,10 @@ class DailyQueuePage(QWidget):
             for index, item in enumerate(
                 snapshot.queued_items
             ):
-                if photos_by_listing is None:
+                if (
+                    photos_by_listing
+                    is None
+                ):
                     photos = None
 
                 else:

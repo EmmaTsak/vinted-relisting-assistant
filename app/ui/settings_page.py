@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import (
+    Qt,
+    Signal,
+)
+from PySide6.QtGui import (
+    QIntValidator,
+    QWheelEvent,
+)
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -11,7 +18,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QSpinBox,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -28,7 +35,25 @@ from app.services.settings_service import (
 from app.ui.backup_dialog import (
     BackupRestoreDialog,
 )
-from app.ui.theme import apply_theme
+from app.ui.theme import (
+    apply_theme,
+)
+
+
+class NoWheelComboBox(QComboBox):
+    """
+    Combo box that does not change selection when the
+    mouse wheel is used over it.
+
+    Ignoring the event allows the surrounding scroll area
+    to continue scrolling.
+    """
+
+    def wheelEvent(
+        self,
+        event: QWheelEvent,
+    ) -> None:
+        event.ignore()
 
 
 class SettingsPage(QWidget):
@@ -37,6 +62,9 @@ class SettingsPage(QWidget):
     """
 
     settings_saved = Signal(object)
+
+    FIELD_HEIGHT = 42
+    BUTTON_HEIGHT = 40
 
     def __init__(
         self,
@@ -50,7 +78,9 @@ class SettingsPage(QWidget):
         self._apply_styles()
         self.reload()
 
-    def _build_ui(self) -> None:
+    def _build_ui(
+        self,
+    ) -> None:
         root_layout = QVBoxLayout(
             self
         )
@@ -63,7 +93,38 @@ class SettingsPage(QWidget):
         )
 
         root_layout.setSpacing(
-            14
+            0
+        )
+
+        self.scroll_area = QScrollArea()
+
+        self.scroll_area.setWidgetResizable(
+            True
+        )
+
+        self.scroll_area.setFrameShape(
+            QFrame.Shape.NoFrame
+        )
+
+        self.scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+
+        content = QWidget()
+
+        content_layout = QVBoxLayout(
+            content
+        )
+
+        content_layout.setContentsMargins(
+            0,
+            0,
+            6,
+            10,
+        )
+
+        content_layout.setSpacing(
+            16
         )
 
         explanation = QLabel(
@@ -81,7 +142,7 @@ class SettingsPage(QWidget):
             True
         )
 
-        root_layout.addWidget(
+        content_layout.addWidget(
             explanation
         )
 
@@ -103,7 +164,7 @@ class SettingsPage(QWidget):
         )
 
         settings_layout.setSpacing(
-            16
+            18
         )
 
         settings_heading = QLabel(
@@ -125,30 +186,98 @@ class SettingsPage(QWidget):
         )
 
         form.setVerticalSpacing(
-            15
+            18
         )
 
-        self.daily_limit_input = QSpinBox()
-
-        self.daily_limit_input.setRange(
-            1,
-            50,
+        form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
         )
 
-        self.minimum_age_input = QSpinBox()
+        # -------------------------------------------------
+        # Daily limit
+        #
+        # Plain text field rather than QSpinBox:
+        # - no arrows
+        # - no wheel changes
+        # - only valid integers 1-50
+        # -------------------------------------------------
 
-        self.minimum_age_input.setRange(
-            0,
-            3650,
+        self.daily_limit_input = (
+            QLineEdit()
         )
 
-        self.minimum_age_input.setSuffix(
-            " days"
+        self.daily_limit_input.setValidator(
+            QIntValidator(
+                1,
+                50,
+                self.daily_limit_input,
+            )
         )
 
-        self.vinted_url_input = QLineEdit()
+        self.daily_limit_input.setMinimumHeight(
+            self.FIELD_HEIGHT
+        )
 
-        self.currency_input = QLineEdit()
+        self.daily_limit_input.setMaximumWidth(
+            160
+        )
+
+        self.daily_limit_input.setPlaceholderText(
+            "1 - 50"
+        )
+
+        self.daily_limit_input.setToolTip(
+            "Enter a number from 1 to 50."
+        )
+
+        # -------------------------------------------------
+        # Minimum relist age
+        #
+        # Also a plain typed integer field.
+        # -------------------------------------------------
+
+        self.minimum_age_input = (
+            QLineEdit()
+        )
+
+        self.minimum_age_input.setValidator(
+            QIntValidator(
+                0,
+                3650,
+                self.minimum_age_input,
+            )
+        )
+
+        self.minimum_age_input.setMinimumHeight(
+            self.FIELD_HEIGHT
+        )
+
+        self.minimum_age_input.setMaximumWidth(
+            160
+        )
+
+        self.minimum_age_input.setPlaceholderText(
+            "Days"
+        )
+
+        self.minimum_age_input.setToolTip(
+            (
+                "Enter the minimum number of days "
+                "before a listing is eligible again."
+            )
+        )
+
+        self.vinted_url_input = (
+            QLineEdit()
+        )
+
+        self.vinted_url_input.setMinimumHeight(
+            self.FIELD_HEIGHT
+        )
+
+        self.currency_input = (
+            QLineEdit()
+        )
 
         self.currency_input.setMaxLength(
             3
@@ -158,9 +287,23 @@ class SettingsPage(QWidget):
             100
         )
 
-        self.photo_directory_input = QLineEdit()
+        self.currency_input.setMinimumHeight(
+            self.FIELD_HEIGHT
+        )
+
+        self.photo_directory_input = (
+            QLineEdit()
+        )
+
+        self.photo_directory_input.setMinimumHeight(
+            self.FIELD_HEIGHT
+        )
 
         photo_row = QWidget()
+
+        photo_row.setMinimumHeight(
+            self.FIELD_HEIGHT
+        )
 
         photo_layout = QHBoxLayout(
             photo_row
@@ -185,6 +328,10 @@ class SettingsPage(QWidget):
             "browseButton"
         )
 
+        photo_browse.setMinimumHeight(
+            self.BUTTON_HEIGHT
+        )
+
         photo_browse.clicked.connect(
             self._choose_photo_directory
         )
@@ -198,9 +345,19 @@ class SettingsPage(QWidget):
             photo_browse
         )
 
-        self.backup_directory_input = QLineEdit()
+        self.backup_directory_input = (
+            QLineEdit()
+        )
+
+        self.backup_directory_input.setMinimumHeight(
+            self.FIELD_HEIGHT
+        )
 
         backup_row = QWidget()
+
+        backup_row.setMinimumHeight(
+            self.FIELD_HEIGHT
+        )
 
         backup_layout = QHBoxLayout(
             backup_row
@@ -225,6 +382,10 @@ class SettingsPage(QWidget):
             "browseButton"
         )
 
+        backup_browse.setMinimumHeight(
+            self.BUTTON_HEIGHT
+        )
+
         backup_browse.clicked.connect(
             self._choose_backup_directory
         )
@@ -238,7 +399,14 @@ class SettingsPage(QWidget):
             backup_browse
         )
 
-        self.theme_input = QComboBox()
+        # Theme dropdown also ignores wheel changes.
+        self.theme_input = (
+            NoWheelComboBox()
+        )
+
+        self.theme_input.setMinimumHeight(
+            self.FIELD_HEIGHT
+        )
 
         self.theme_input.addItem(
             "System",
@@ -315,7 +483,9 @@ class SettingsPage(QWidget):
             note
         )
 
-        settings_buttons = QHBoxLayout()
+        settings_buttons = (
+            QHBoxLayout()
+        )
 
         reset_button = QPushButton(
             "RESET TO DEFAULTS"
@@ -323,6 +493,10 @@ class SettingsPage(QWidget):
 
         reset_button.setObjectName(
             "secondaryButton"
+        )
+
+        reset_button.setMinimumHeight(
+            self.BUTTON_HEIGHT
         )
 
         reset_button.clicked.connect(
@@ -335,6 +509,10 @@ class SettingsPage(QWidget):
 
         save_button.setObjectName(
             "primaryButton"
+        )
+
+        save_button.setMinimumHeight(
+            self.BUTTON_HEIGHT
         )
 
         save_button.clicked.connect(
@@ -355,9 +533,13 @@ class SettingsPage(QWidget):
             settings_buttons
         )
 
-        root_layout.addWidget(
+        content_layout.addWidget(
             settings_frame
         )
+
+        # -------------------------------------------------
+        # Backup section
+        # -------------------------------------------------
 
         backup_frame = QFrame()
 
@@ -365,8 +547,10 @@ class SettingsPage(QWidget):
             "settingsFrame"
         )
 
-        backup_frame_layout = QVBoxLayout(
-            backup_frame
+        backup_frame_layout = (
+            QVBoxLayout(
+                backup_frame
+            )
         )
 
         backup_frame_layout.setContentsMargins(
@@ -377,7 +561,7 @@ class SettingsPage(QWidget):
         )
 
         backup_frame_layout.setSpacing(
-            12
+            14
         )
 
         backup_heading = QLabel(
@@ -412,26 +596,40 @@ class SettingsPage(QWidget):
             backup_description
         )
 
-        backup_buttons = QHBoxLayout()
+        backup_buttons = (
+            QHBoxLayout()
+        )
 
-        create_backup_button = QPushButton(
-            "CREATE BACKUP"
+        create_backup_button = (
+            QPushButton(
+                "CREATE BACKUP"
+            )
         )
 
         create_backup_button.setObjectName(
             "primaryButton"
         )
 
+        create_backup_button.setMinimumHeight(
+            self.BUTTON_HEIGHT
+        )
+
         create_backup_button.clicked.connect(
             self._create_backup
         )
 
-        manage_backups_button = QPushButton(
-            "MANAGE / RESTORE BACKUPS"
+        manage_backups_button = (
+            QPushButton(
+                "MANAGE / RESTORE BACKUPS"
+            )
         )
 
         manage_backups_button.setObjectName(
             "secondaryButton"
+        )
+
+        manage_backups_button.setMinimumHeight(
+            self.BUTTON_HEIGHT
         )
 
         manage_backups_button.clicked.connect(
@@ -452,15 +650,28 @@ class SettingsPage(QWidget):
             backup_buttons
         )
 
-        root_layout.addWidget(
+        content_layout.addWidget(
             backup_frame
         )
 
-        root_layout.addStretch()
+        content_layout.addStretch()
 
-    def reload(self) -> None:
+        self.scroll_area.setWidget(
+            content
+        )
+
+        root_layout.addWidget(
+            self.scroll_area,
+            1,
+        )
+
+    def reload(
+        self,
+    ) -> None:
         try:
-            settings = load_settings()
+            settings = (
+                load_settings()
+            )
 
         except Exception as exc:
             QMessageBox.warning(
@@ -473,7 +684,9 @@ class SettingsPage(QWidget):
                 ),
             )
 
-            settings = default_settings()
+            settings = (
+                default_settings()
+            )
 
         self._populate(
             settings
@@ -483,12 +696,16 @@ class SettingsPage(QWidget):
         self,
         settings: AppSettings,
     ) -> None:
-        self.daily_limit_input.setValue(
-            settings.daily_relist_limit
+        self.daily_limit_input.setText(
+            str(
+                settings.daily_relist_limit
+            )
         )
 
-        self.minimum_age_input.setValue(
-            settings.minimum_relist_age_days
+        self.minimum_age_input.setText(
+            str(
+                settings.minimum_relist_age_days
+            )
         )
 
         self.vinted_url_input.setText(
@@ -518,17 +735,124 @@ class SettingsPage(QWidget):
                 theme_index
             )
 
+    def _validate_number_fields(
+        self,
+    ) -> tuple[int, int] | None:
+        """
+        Validate the two manually typed numeric settings.
+        """
+        daily_text = (
+            self.daily_limit_input
+            .text()
+            .strip()
+        )
+
+        age_text = (
+            self.minimum_age_input
+            .text()
+            .strip()
+        )
+
+        if not daily_text:
+            QMessageBox.warning(
+                self,
+                "Missing Daily Limit",
+                (
+                    "Enter a daily relist limit "
+                    "between 1 and 50."
+                ),
+            )
+
+            self.daily_limit_input.setFocus()
+
+            return None
+
+        if not age_text:
+            QMessageBox.warning(
+                self,
+                "Missing Minimum Age",
+                (
+                    "Enter a minimum relist age "
+                    "between 0 and 3650 days."
+                ),
+            )
+
+            self.minimum_age_input.setFocus()
+
+            return None
+
+        try:
+            daily_limit = int(
+                daily_text
+            )
+
+            minimum_age = int(
+                age_text
+            )
+
+        except ValueError:
+            QMessageBox.warning(
+                self,
+                "Invalid Number",
+                "Enter whole numbers only.",
+            )
+
+            return None
+
+        if not (
+            1
+            <= daily_limit
+            <= 50
+        ):
+            QMessageBox.warning(
+                self,
+                "Invalid Daily Limit",
+                (
+                    "Daily relist limit must be "
+                    "between 1 and 50."
+                ),
+            )
+
+            self.daily_limit_input.setFocus()
+
+            return None
+
+        if not (
+            0
+            <= minimum_age
+            <= 3650
+        ):
+            QMessageBox.warning(
+                self,
+                "Invalid Minimum Age",
+                (
+                    "Minimum relist age must be "
+                    "between 0 and 3650 days."
+                ),
+            )
+
+            self.minimum_age_input.setFocus()
+
+            return None
+
+        return (
+            daily_limit,
+            minimum_age,
+        )
+
     def _choose_photo_directory(
         self,
     ) -> None:
-        selected = QFileDialog.getExistingDirectory(
-            self,
-            "Choose Photo Storage Directory",
-            (
-                self.photo_directory_input
-                .text()
-                .strip()
-            ),
+        selected = (
+            QFileDialog.getExistingDirectory(
+                self,
+                "Choose Photo Storage Directory",
+                (
+                    self.photo_directory_input
+                    .text()
+                    .strip()
+                ),
+            )
         )
 
         if selected:
@@ -539,14 +863,16 @@ class SettingsPage(QWidget):
     def _choose_backup_directory(
         self,
     ) -> None:
-        selected = QFileDialog.getExistingDirectory(
-            self,
-            "Choose Backup Directory",
-            (
-                self.backup_directory_input
-                .text()
-                .strip()
-            ),
+        selected = (
+            QFileDialog.getExistingDirectory(
+                self,
+                "Choose Backup Directory",
+                (
+                    self.backup_directory_input
+                    .text()
+                    .strip()
+                ),
+            )
         )
 
         if selected:
@@ -556,13 +882,25 @@ class SettingsPage(QWidget):
 
     def _build_settings(
         self,
-    ) -> AppSettings:
+    ) -> AppSettings | None:
+        number_values = (
+            self._validate_number_fields()
+        )
+
+        if number_values is None:
+            return None
+
+        (
+            daily_limit,
+            minimum_age,
+        ) = number_values
+
         return AppSettings(
             daily_relist_limit=(
-                self.daily_limit_input.value()
+                daily_limit
             ),
             minimum_relist_age_days=(
-                self.minimum_age_input.value()
+                minimum_age
             ),
             vinted_url=(
                 self.vinted_url_input.text()
@@ -581,10 +919,19 @@ class SettingsPage(QWidget):
             ),
         )
 
-    def _save(self) -> None:
+    def _save(
+        self,
+    ) -> None:
+        new_settings = (
+            self._build_settings()
+        )
+
+        if new_settings is None:
+            return
+
         try:
             saved = save_settings(
-                self._build_settings()
+                new_settings
             )
 
         except Exception as exc:
@@ -617,10 +964,19 @@ class SettingsPage(QWidget):
             ),
         )
 
-    def _create_backup(self) -> None:
+    def _create_backup(
+        self,
+    ) -> None:
+        new_settings = (
+            self._build_settings()
+        )
+
+        if new_settings is None:
+            return
+
         try:
             saved = save_settings(
-                self._build_settings()
+                new_settings
             )
 
             self._populate(
@@ -635,7 +991,9 @@ class SettingsPage(QWidget):
                 saved
             )
 
-            backup = create_backup()
+            backup = (
+                create_backup()
+            )
 
         except Exception as exc:
             QMessageBox.critical(
@@ -668,8 +1026,10 @@ class SettingsPage(QWidget):
     def _open_backup_manager(
         self,
     ) -> None:
-        dialog = BackupRestoreDialog(
-            parent=self
+        dialog = (
+            BackupRestoreDialog(
+                parent=self
+            )
         )
 
         dialog.restore_completed.connect(
@@ -682,7 +1042,9 @@ class SettingsPage(QWidget):
         self,
     ) -> None:
         try:
-            settings = load_settings()
+            settings = (
+                load_settings()
+            )
 
         except Exception as exc:
             QMessageBox.critical(
@@ -740,11 +1102,6 @@ class SettingsPage(QWidget):
     def _apply_styles(
         self,
     ) -> None:
-        """
-        Older page-level styling is intentionally minimal.
-
-        The central ThemeManager applies the real colours.
-        """
         self.setStyleSheet(
             ""
         )

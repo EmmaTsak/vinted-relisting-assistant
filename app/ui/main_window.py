@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import (
+    QTimer,
+    Qt,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -14,23 +17,42 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app import APP_NAME, APP_VERSION
+from app import (
+    APP_NAME,
+    APP_VERSION,
+)
 from app.services.settings_service import (
     AppSettings,
     default_settings,
     load_settings,
 )
-from app.ui.category_enabled_all_listings import CategoryEnabledAllListingsPage as AllListingsPage
-from app.ui.daily_queue import DailyQueuePage
-from app.ui.dashboard_page import DashboardPage
-from app.ui.history_page import HistoryPage
-from app.ui.import_dialog import ImportListingsDialog
-from app.ui.lifecycle_dialog import ListingLifecycleDialog
-from app.ui.isbn_listing_dialog import ISBNListingDialog as ListingDialog
+from app.ui.category_enabled_all_listings import (
+    CategoryEnabledAllListingsPage as AllListingsPage,
+)
+from app.ui.daily_queue import (
+    DailyQueuePage,
+)
+from app.ui.dashboard_page import (
+    DashboardPage,
+)
+from app.ui.history_page import (
+    HistoryPage,
+)
+from app.ui.import_dialog import (
+    ImportListingsDialog,
+)
+from app.ui.isbn_listing_dialog import (
+    ISBNListingDialog as ListingDialog,
+)
+from app.ui.lifecycle_dialog import (
+    ListingLifecycleDialog,
+)
 from app.ui.relisting_preparation import (
     RelistingPreparationDialog,
 )
-from app.ui.settings_page import SettingsPage
+from app.ui.settings_page import (
+    SettingsPage,
+)
 from app.ui.status_listings import (
     ArchivedListingsPage,
     SoldListingsPage,
@@ -41,11 +63,23 @@ class MainWindow(QMainWindow):
     """
     Main Vinted Relisting Assistant window.
 
-    Data-heavy pages are refreshed lazily.
+    Data-heavy pages are created lazily the first time
+    they are opened.
 
     When listing data changes, hidden pages are marked dirty
-    instead of all being rebuilt immediately.
+    instead of being rebuilt immediately.
     """
+
+    PAGE_INDEXES = {
+        "Dashboard": 0,
+        "Today's Queue": 1,
+        "All Listings": 2,
+        "Add Listing": 3,
+        "History": 4,
+        "Sold": 5,
+        "Archived": 6,
+        "Settings": 7,
+    }
 
     DATA_PAGES = {
         "Dashboard",
@@ -56,7 +90,9 @@ class MainWindow(QMainWindow):
         "Archived",
     }
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+    ) -> None:
         super().__init__()
 
         self.settings = (
@@ -72,7 +108,45 @@ class MainWindow(QMainWindow):
             "Dashboard"
         )
 
-        self._dirty_pages: set[str] = set()
+        self._dirty_pages: set[str] = (
+            set()
+        )
+
+        self.dashboard_page: (
+            DashboardPage | None
+        ) = None
+
+        self.daily_queue_page: (
+            DailyQueuePage | None
+        ) = None
+
+        self.all_listings_page: (
+            AllListingsPage | None
+        ) = None
+
+        self.add_listing_page: (
+            QWidget | None
+        ) = None
+
+        self.history_page: (
+            HistoryPage | None
+        ) = None
+
+        self.sold_page: (
+            SoldListingsPage | None
+        ) = None
+
+        self.archived_page: (
+            ArchivedListingsPage | None
+        ) = None
+
+        self.settings_page: (
+            SettingsPage | None
+        ) = None
+
+        self.last_saved_label: (
+            QLabel | None
+        ) = None
 
         self.setWindowTitle(
             APP_NAME
@@ -92,7 +166,7 @@ class MainWindow(QMainWindow):
         self._apply_styles()
 
         self._apply_runtime_settings(
-            refresh_queue=True
+            refresh_queue=False
         )
 
     def _load_settings_safely(
@@ -104,7 +178,9 @@ class MainWindow(QMainWindow):
         except Exception:
             return default_settings()
 
-    def _build_ui(self) -> None:
+    def _build_ui(
+        self,
+    ) -> None:
         central_widget = QWidget()
 
         self.setCentralWidget(
@@ -225,11 +301,10 @@ class MainWindow(QMainWindow):
             button.clicked.connect(
                 lambda checked=False,
                 target_index=index,
-                target_name=page_name: (
-                    self._change_page(
-                        target_index,
-                        target_name,
-                    )
+                target_name=page_name:
+                self._change_page(
+                    target_index,
+                    target_name,
                 )
             )
 
@@ -299,141 +374,382 @@ class MainWindow(QMainWindow):
             self.page_title
         )
 
-        self.page_stack = QStackedWidget()
+        self.page_stack = (
+            QStackedWidget()
+        )
 
         self.page_stack.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding,
         )
 
-        self.dashboard_page = (
-            DashboardPage()
-        )
-
-        self.dashboard_page.edit_requested.connect(
-            self.open_edit_listing_dialog
-        )
-
-        self.dashboard_page.open_queue_requested.connect(
-            lambda: self._change_page(
-                1,
-                "Today's Queue",
+        # Reserve all page positions with tiny placeholders.
+        for _ in range(
+            len(
+                self.PAGE_INDEXES
             )
-        )
-
-        self.dashboard_page.open_history_requested.connect(
-            lambda: self._change_page(
-                4,
-                "History",
+        ):
+            self.page_stack.addWidget(
+                self._create_lazy_placeholder()
             )
-        )
-
-        self.page_stack.addWidget(
-            self.dashboard_page
-        )
-
-        self.daily_queue_page = (
-            DailyQueuePage()
-        )
-
-        self.daily_queue_page.prepare_requested.connect(
-            self.open_relisting_preparation
-        )
-
-        self.daily_queue_page.edit_requested.connect(
-            self.open_edit_listing_dialog
-        )
-
-        self.daily_queue_page.queue_changed.connect(
-            self._queue_changed
-        )
-
-        self.page_stack.addWidget(
-            self.daily_queue_page
-        )
-
-        self.all_listings_page = (
-            AllListingsPage()
-        )
-
-        self.all_listings_page.edit_requested.connect(
-            self.open_edit_listing_dialog
-        )
-
-        self.all_listings_page.manage_requested.connect(
-            self.open_lifecycle_dialog
-        )
-
-        self.page_stack.addWidget(
-            self.all_listings_page
-        )
-
-        self.page_stack.addWidget(
-            self._create_add_listing_page()
-        )
-
-        self.history_page = (
-            HistoryPage()
-        )
-
-        self.history_page.edit_requested.connect(
-            self.open_edit_listing_dialog
-        )
-
-        self.page_stack.addWidget(
-            self.history_page
-        )
-
-        self.sold_page = (
-            SoldListingsPage()
-        )
-
-        self.sold_page.edit_requested.connect(
-            self.open_edit_listing_dialog
-        )
-
-        self.sold_page.manage_requested.connect(
-            self.open_lifecycle_dialog
-        )
-
-        self.page_stack.addWidget(
-            self.sold_page
-        )
-
-        self.archived_page = (
-            ArchivedListingsPage()
-        )
-
-        self.archived_page.edit_requested.connect(
-            self.open_edit_listing_dialog
-        )
-
-        self.archived_page.manage_requested.connect(
-            self.open_lifecycle_dialog
-        )
-
-        self.page_stack.addWidget(
-            self.archived_page
-        )
-
-        self.settings_page = (
-            SettingsPage()
-        )
-
-        self.settings_page.settings_saved.connect(
-            self._settings_saved
-        )
-
-        self.page_stack.addWidget(
-            self.settings_page
-        )
 
         layout.addWidget(
             self.page_stack,
             1,
         )
 
+        # Dashboard is the only data-heavy page
+        # loaded during startup.
+        self._ensure_page_loaded(
+            "Dashboard"
+        )
+
+        # Add Listing is lightweight and gives us the
+        # persistent save/import confirmation label.
+        self._ensure_page_loaded(
+            "Add Listing"
+        )
+
+        self.page_stack.setCurrentIndex(
+            self.PAGE_INDEXES[
+                "Dashboard"
+            ]
+        )
+
         return content
+
+    def _create_lazy_placeholder(
+        self,
+    ) -> QWidget:
+        placeholder = QWidget()
+
+        placeholder.setObjectName(
+            "lazyPagePlaceholder"
+        )
+
+        return placeholder
+
+    def _replace_stack_page(
+        self,
+        index: int,
+        page: QWidget,
+    ) -> None:
+        """
+        Replace one placeholder while preserving the page index.
+        """
+        old_widget = (
+            self.page_stack.widget(
+                index
+            )
+        )
+
+        if old_widget is page:
+            return
+
+        if old_widget is not None:
+            self.page_stack.removeWidget(
+                old_widget
+            )
+
+            old_widget.deleteLater()
+
+        self.page_stack.insertWidget(
+            index,
+            page,
+        )
+
+    def _ensure_page_loaded(
+        self,
+        page_name: str,
+    ) -> QWidget:
+        """
+        Create a page only on its first visit.
+
+        Later visits reuse the same QWidget.
+        """
+        index = (
+            self.PAGE_INDEXES[
+                page_name
+            ]
+        )
+
+        if page_name == "Dashboard":
+            if (
+                self.dashboard_page
+                is None
+            ):
+                page = DashboardPage()
+
+                page.edit_requested.connect(
+                    self.open_edit_listing_dialog
+                )
+
+                page.open_queue_requested.connect(
+                    lambda: self._change_page(
+                        self.PAGE_INDEXES[
+                            "Today's Queue"
+                        ],
+                        "Today's Queue",
+                    )
+                )
+
+                page.open_history_requested.connect(
+                    lambda: self._change_page(
+                        self.PAGE_INDEXES[
+                            "History"
+                        ],
+                        "History",
+                    )
+                )
+
+                self.dashboard_page = (
+                    page
+                )
+
+                self._replace_stack_page(
+                    index,
+                    page,
+                )
+
+                self._dirty_pages.discard(
+                    page_name
+                )
+
+            return self.dashboard_page
+
+        if (
+            page_name
+            == "Today's Queue"
+        ):
+            if (
+                self.daily_queue_page
+                is None
+            ):
+                page = DailyQueuePage()
+
+                page.prepare_requested.connect(
+                    self.open_relisting_preparation
+                )
+
+                page.edit_requested.connect(
+                    self.open_edit_listing_dialog
+                )
+
+                page.queue_changed.connect(
+                    self._queue_changed
+                )
+
+                self.daily_queue_page = (
+                    page
+                )
+
+                self._replace_stack_page(
+                    index,
+                    page,
+                )
+
+                page.daily_limit = (
+                    self.settings
+                    .daily_relist_limit
+                )
+
+                page.minimum_age_days = (
+                    self.settings
+                    .minimum_relist_age_days
+                )
+
+                page.rule_label.setText(
+                    (
+                        "Minimum age: "
+                        f"{self.settings.minimum_relist_age_days} "
+                        "days"
+                    )
+                )
+
+                # DailyQueuePage initially loads with its defaults,
+                # so refresh once with the actual saved settings.
+                page.refresh()
+
+                self._dirty_pages.discard(
+                    page_name
+                )
+
+            return self.daily_queue_page
+
+        if (
+            page_name
+            == "All Listings"
+        ):
+            if (
+                self.all_listings_page
+                is None
+            ):
+                page = (
+                    AllListingsPage()
+                )
+
+                page.edit_requested.connect(
+                    self.open_edit_listing_dialog
+                )
+
+                page.manage_requested.connect(
+                    self.open_lifecycle_dialog
+                )
+
+                self.all_listings_page = (
+                    page
+                )
+
+                self._replace_stack_page(
+                    index,
+                    page,
+                )
+
+                self._dirty_pages.discard(
+                    page_name
+                )
+
+            return self.all_listings_page
+
+        if (
+            page_name
+            == "Add Listing"
+        ):
+            if (
+                self.add_listing_page
+                is None
+            ):
+                page = (
+                    self._create_add_listing_page()
+                )
+
+                self.add_listing_page = (
+                    page
+                )
+
+                self._replace_stack_page(
+                    index,
+                    page,
+                )
+
+            return self.add_listing_page
+
+        if page_name == "History":
+            if (
+                self.history_page
+                is None
+            ):
+                page = HistoryPage()
+
+                page.edit_requested.connect(
+                    self.open_edit_listing_dialog
+                )
+
+                self.history_page = (
+                    page
+                )
+
+                self._replace_stack_page(
+                    index,
+                    page,
+                )
+
+                self._dirty_pages.discard(
+                    page_name
+                )
+
+            return self.history_page
+
+        if page_name == "Sold":
+            if (
+                self.sold_page
+                is None
+            ):
+                page = SoldListingsPage()
+
+                page.edit_requested.connect(
+                    self.open_edit_listing_dialog
+                )
+
+                page.manage_requested.connect(
+                    self.open_lifecycle_dialog
+                )
+
+                self.sold_page = (
+                    page
+                )
+
+                self._replace_stack_page(
+                    index,
+                    page,
+                )
+
+                self._dirty_pages.discard(
+                    page_name
+                )
+
+            return self.sold_page
+
+        if page_name == "Archived":
+            if (
+                self.archived_page
+                is None
+            ):
+                page = (
+                    ArchivedListingsPage()
+                )
+
+                page.edit_requested.connect(
+                    self.open_edit_listing_dialog
+                )
+
+                page.manage_requested.connect(
+                    self.open_lifecycle_dialog
+                )
+
+                self.archived_page = (
+                    page
+                )
+
+                self._replace_stack_page(
+                    index,
+                    page,
+                )
+
+                self._dirty_pages.discard(
+                    page_name
+                )
+
+            return self.archived_page
+
+        if page_name == "Settings":
+            if (
+                self.settings_page
+                is None
+            ):
+                page = SettingsPage()
+
+                page.settings_saved.connect(
+                    self._settings_saved
+                )
+
+                self.settings_page = (
+                    page
+                )
+
+                self._replace_stack_page(
+                    index,
+                    page,
+                )
+
+            return self.settings_page
+
+        raise ValueError(
+            (
+                "Unknown page: "
+                f"{page_name}"
+            )
+        )
 
     def _create_add_listing_page(
         self,
@@ -457,8 +773,10 @@ class MainWindow(QMainWindow):
             "pagePlaceholder"
         )
 
-        container_layout = QVBoxLayout(
-            container
+        container_layout = (
+            QVBoxLayout(
+                container
+            )
         )
 
         container_layout.setContentsMargins(
@@ -618,18 +936,23 @@ class MainWindow(QMainWindow):
         self,
         listing_id: int,
     ) -> None:
-        dialog = RelistingPreparationDialog(
-            listing_id=listing_id,
-            parent=self,
-            configured_limit=(
-                self.settings.daily_relist_limit
-            ),
-            minimum_age_days=(
-                self.settings.minimum_relist_age_days
-            ),
-            vinted_url=(
-                self.settings.vinted_url
-            ),
+        dialog = (
+            RelistingPreparationDialog(
+                listing_id=listing_id,
+                parent=self,
+                configured_limit=(
+                    self.settings
+                    .daily_relist_limit
+                ),
+                minimum_age_days=(
+                    self.settings
+                    .minimum_relist_age_days
+                ),
+                vinted_url=(
+                    self.settings
+                    .vinted_url
+                ),
+            )
         )
 
         dialog.relisted.connect(
@@ -645,9 +968,11 @@ class MainWindow(QMainWindow):
         listing_id: int,
     ) -> None:
         try:
-            dialog = ListingLifecycleDialog(
-                listing_id=listing_id,
-                parent=self,
+            dialog = (
+                ListingLifecycleDialog(
+                    listing_id=listing_id,
+                    parent=self,
+                )
             )
 
         except Exception as exc:
@@ -687,18 +1012,33 @@ class MainWindow(QMainWindow):
         self,
         refresh_queue: bool = False,
     ) -> None:
+        """
+        Apply settings only to an already-created queue.
+
+        Loading settings must not cause Today's Queue to be
+        constructed during application startup.
+        """
+        if (
+            self.daily_queue_page
+            is None
+        ):
+            return
+
         self.daily_queue_page.daily_limit = (
-            self.settings.daily_relist_limit
+            self.settings
+            .daily_relist_limit
         )
 
         self.daily_queue_page.minimum_age_days = (
-            self.settings.minimum_relist_age_days
+            self.settings
+            .minimum_relist_age_days
         )
 
         self.daily_queue_page.rule_label.setText(
             (
                 "Minimum age: "
-                f"{self.settings.minimum_relist_age_days} days"
+                f"{self.settings.minimum_relist_age_days} "
+                "days"
             )
         )
 
@@ -713,12 +1053,16 @@ class MainWindow(QMainWindow):
         self,
         listing_id: int,
     ) -> None:
-        self.last_saved_label.setText(
-            (
-                f"Listing #{listing_id} "
-                "saved successfully."
+        if (
+            self.last_saved_label
+            is not None
+        ):
+            self.last_saved_label.setText(
+                (
+                    f"Listing #{listing_id} "
+                    "saved successfully."
+                )
             )
-        )
 
         self._mark_listing_views_dirty()
 
@@ -750,12 +1094,16 @@ class MainWindow(QMainWindow):
         self,
         imported_count: int,
     ) -> None:
-        self.last_saved_label.setText(
-            (
-                f"{imported_count} listings "
-                "imported successfully."
+        if (
+            self.last_saved_label
+            is not None
+        ):
+            self.last_saved_label.setText(
+                (
+                    f"{imported_count} listings "
+                    "imported successfully."
+                )
             )
-        )
 
         self._mark_listing_views_dirty()
 
@@ -771,10 +1119,9 @@ class MainWindow(QMainWindow):
         self,
     ) -> None:
         """
-        DailyQueuePage refreshes itself before emitting this signal.
+        Queue refreshes itself before emitting this signal.
 
-        Mark the other data pages dirty instead of rebuilding
-        all of them immediately.
+        Other listing-based pages become dirty.
         """
         self._mark_listing_views_dirty(
             exclude={
@@ -827,10 +1174,9 @@ class MainWindow(QMainWindow):
 
         QTimer.singleShot(
             0,
-            lambda name=page_name: (
-                self._refresh_page_if_needed(
-                    name
-                )
+            lambda name=page_name:
+            self._refresh_page_if_needed(
+                name
             ),
         )
 
@@ -840,10 +1186,11 @@ class MainWindow(QMainWindow):
         force: bool = False,
     ) -> None:
         """
-        Refresh one page only when its data has changed.
+        Refresh the visible page only if its data changed.
 
-        A scheduled refresh is ignored if the user has already
-        navigated somewhere else.
+        If a dirty page has never been created, creating it
+        already loads the latest data, so another refresh is
+        unnecessary.
         """
         if (
             page_name
@@ -858,22 +1205,114 @@ class MainWindow(QMainWindow):
         ):
             return
 
-        if page_name == "Dashboard":
+        if (
+            page_name == "Dashboard"
+            and self.dashboard_page
+            is None
+        ):
+            self._ensure_page_loaded(
+                page_name
+            )
+
+            return
+
+        if (
+            page_name == "Today's Queue"
+            and self.daily_queue_page
+            is None
+        ):
+            self._ensure_page_loaded(
+                page_name
+            )
+
+            return
+
+        if (
+            page_name == "All Listings"
+            and self.all_listings_page
+            is None
+        ):
+            self._ensure_page_loaded(
+                page_name
+            )
+
+            return
+
+        if (
+            page_name == "History"
+            and self.history_page
+            is None
+        ):
+            self._ensure_page_loaded(
+                page_name
+            )
+
+            return
+
+        if (
+            page_name == "Sold"
+            and self.sold_page
+            is None
+        ):
+            self._ensure_page_loaded(
+                page_name
+            )
+
+            return
+
+        if (
+            page_name == "Archived"
+            and self.archived_page
+            is None
+        ):
+            self._ensure_page_loaded(
+                page_name
+            )
+
+            return
+
+        if (
+            page_name == "Dashboard"
+            and self.dashboard_page
+            is not None
+        ):
             self.dashboard_page.refresh()
 
-        elif page_name == "Today's Queue":
+        elif (
+            page_name
+            == "Today's Queue"
+            and self.daily_queue_page
+            is not None
+        ):
             self.daily_queue_page.refresh()
 
-        elif page_name == "All Listings":
+        elif (
+            page_name
+            == "All Listings"
+            and self.all_listings_page
+            is not None
+        ):
             self.all_listings_page.refresh()
 
-        elif page_name == "History":
+        elif (
+            page_name == "History"
+            and self.history_page
+            is not None
+        ):
             self.history_page.refresh()
 
-        elif page_name == "Sold":
+        elif (
+            page_name == "Sold"
+            and self.sold_page
+            is not None
+        ):
             self.sold_page.refresh()
 
-        elif page_name == "Archived":
+        elif (
+            page_name == "Archived"
+            and self.archived_page
+            is not None
+        ):
             self.archived_page.refresh()
 
         self._dirty_pages.discard(
@@ -885,12 +1324,29 @@ class MainWindow(QMainWindow):
         index: int,
         page_name: str,
     ) -> None:
+        expected_index = (
+            self.PAGE_INDEXES.get(
+                page_name
+            )
+        )
+
+        if expected_index is None:
+            return
+
+        # Keep the old method signature compatible with
+        # existing sidebar/dashboard calls.
+        del index
+
         self._current_page_name = (
             page_name
         )
 
+        self._ensure_page_loaded(
+            page_name
+        )
+
         self.page_stack.setCurrentIndex(
-            index
+            expected_index
         )
 
         self.page_title.setText(
@@ -900,7 +1356,10 @@ class MainWindow(QMainWindow):
         for (
             name,
             button,
-        ) in self.navigation_buttons.items():
+        ) in (
+            self.navigation_buttons
+            .items()
+        ):
             button.setChecked(
                 name == page_name
             )
@@ -908,14 +1367,15 @@ class MainWindow(QMainWindow):
         if page_name == "Settings":
             QTimer.singleShot(
                 0,
-                lambda: (
-                    self.settings_page.reload()
-                    if (
-                        self._current_page_name
-                        == "Settings"
-                    )
-                    else None
-                ),
+                lambda:
+                self.settings_page.reload()
+                if (
+                    self._current_page_name
+                    == "Settings"
+                    and self.settings_page
+                    is not None
+                )
+                else None,
             )
 
         elif (
@@ -924,10 +1384,9 @@ class MainWindow(QMainWindow):
         ):
             QTimer.singleShot(
                 0,
-                lambda name=page_name: (
-                    self._refresh_page_if_needed(
-                        name
-                    )
+                lambda name=page_name:
+                self._refresh_page_if_needed(
+                    name
                 ),
             )
 

@@ -16,7 +16,12 @@ from app.services.settings_service import (
     default_settings,
     load_settings,
 )
-from app.ui.main_window import MainWindow
+from app.ui.input_behavior import (
+    initialize_input_behavior,
+)
+from app.ui.polished_main_window import (
+    PolishedMainWindow,
+)
 from app.ui.theme import (
     initialize_theme_manager,
 )
@@ -69,8 +74,8 @@ def initialize_application() -> None:
 
 def load_startup_theme() -> str:
     """
-    Load the saved appearance preference without preventing startup
-    if settings.json is damaged.
+    Load the saved appearance preference without preventing
+    startup if settings.json is damaged.
     """
     try:
         settings = load_settings()
@@ -95,6 +100,24 @@ def main() -> int:
     qt_app.setOrganizationName(
         "VintedRelistingAssistant"
     )
+
+    # -------------------------------------------------
+    # Global input safety.
+    #
+    # This must be installed before windows/dialogs are
+    # created so both existing and lazily-created widgets
+    # receive the same behaviour.
+    # -------------------------------------------------
+
+    input_behavior = (
+        initialize_input_behavior(
+            qt_app
+        )
+    )
+
+    # Keep a strong reference for the lifetime of main().
+    # QObject is also parented to QApplication.
+    _ = input_behavior
 
     theme_manager = (
         initialize_theme_manager(
@@ -122,7 +145,9 @@ def main() -> int:
 
         return 1
 
-    window = MainWindow()
+    window = (
+        PolishedMainWindow()
+    )
 
     window.show()
 

@@ -9,7 +9,6 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QDesktopServices,
-    QPixmap,
 )
 from PySide6.QtWidgets import (
     QFrame,
@@ -29,6 +28,9 @@ from app.services.photo_service import (
     get_listing_photos,
     get_thumbnail_path,
 )
+from app.ui.image_cache import (
+    get_scaled_pixmap,
+)
 from app.utils.paths import (
     get_listing_photos_directory,
 )
@@ -36,10 +38,10 @@ from app.utils.paths import (
 
 class ListingCard(QFrame):
     """
-    Visual summary card for one listing.
+    Compact visual summary for one listing.
 
-    Photos can be supplied by the parent page so a large page
-    does not make one database query per card.
+    Supports preloaded photo metadata so list pages can avoid
+    one database query per card.
     """
 
     edit_requested = Signal(int)
@@ -48,18 +50,15 @@ class ListingCard(QFrame):
     def __init__(
         self,
         listing: Listing,
-        photos: list[ListingPhoto] | None = None,
         parent: QWidget | None = None,
+        photos: list[ListingPhoto] | None = None,
     ) -> None:
         super().__init__(
             parent
         )
 
         self.listing = listing
-
-        self._preloaded_photos = (
-            photos
-        )
+        self._preloaded_photos = photos
 
         self.setObjectName(
             "listingCard"
@@ -71,11 +70,10 @@ class ListingCard(QFrame):
         )
 
         self.setMinimumHeight(
-            195
+            150
         )
 
         self._build_ui()
-        self._apply_styles()
 
     def _build_ui(
         self,
@@ -85,31 +83,89 @@ class ListingCard(QFrame):
         )
 
         main_layout.setContentsMargins(
-            18,
-            18,
-            18,
-            18,
+            14,
+            14,
+            14,
+            14,
         )
 
         main_layout.setSpacing(
-            20
+            16
         )
-
-        photo = self._create_photo()
 
         main_layout.addWidget(
-            photo
+            self._create_photo()
         )
 
-        details_layout = (
-            QVBoxLayout()
-        )
+        details_layout = QVBoxLayout()
 
         details_layout.setSpacing(
-            6
+            5
         )
 
-        title_row = QHBoxLayout()
+        details_layout.addLayout(
+            self._create_title_row()
+        )
+
+        details_layout.addLayout(
+            self._create_badge_row()
+        )
+
+        metadata = QLabel(
+            self._build_metadata_text()
+        )
+
+        metadata.setObjectName(
+            "metadataText"
+        )
+
+        metadata.setWordWrap(
+            True
+        )
+
+        details_layout.addWidget(
+            metadata
+        )
+
+        secondary_information = QLabel(
+            self._build_secondary_text()
+        )
+
+        secondary_information.setObjectName(
+            "dateText"
+        )
+
+        secondary_information.setWordWrap(
+            True
+        )
+
+        secondary_information.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+
+        details_layout.addWidget(
+            secondary_information
+        )
+
+        details_layout.addStretch()
+
+        main_layout.addLayout(
+            details_layout,
+            1,
+        )
+
+        main_layout.addLayout(
+            self._create_actions()
+        )
+
+    def _create_title_row(
+        self,
+    ) -> QHBoxLayout:
+        layout = QHBoxLayout()
+
+        layout.setSpacing(
+            12
+        )
 
         title = QLabel(
             self.listing.title
@@ -134,20 +190,30 @@ class ListingCard(QFrame):
             "listingPrice"
         )
 
-        title_row.addWidget(
+        price.setAlignment(
+            Qt.AlignmentFlag.AlignRight
+            | Qt.AlignmentFlag.AlignTop
+        )
+
+        layout.addWidget(
             title,
             1,
         )
 
-        title_row.addWidget(
+        layout.addWidget(
             price
         )
 
-        details_layout.addLayout(
-            title_row
-        )
+        return layout
 
-        status_row = QHBoxLayout()
+    def _create_badge_row(
+        self,
+    ) -> QHBoxLayout:
+        layout = QHBoxLayout()
+
+        layout.setSpacing(
+            6
+        )
 
         status = QLabel(
             self._status_text()
@@ -157,224 +223,42 @@ class ListingCard(QFrame):
             self._status_object_name()
         )
 
+        layout.addWidget(
+            status
+        )
+
         priority = QLabel(
-            (
-                "Priority: "
-                f"{self.listing.priority.value.capitalize()}"
-            )
+            self.listing.priority.value.capitalize()
         )
 
         priority.setObjectName(
             "priorityBadge"
         )
 
-        status_row.addWidget(
-            status
+        priority.setToolTip(
+            "Relisting priority"
         )
 
-        status_row.addWidget(
+        layout.addWidget(
             priority
         )
 
         if self.listing.manually_excluded:
             excluded = QLabel(
-                "Queue Excluded"
+                "Queue excluded"
             )
 
             excluded.setObjectName(
                 "excludedBadge"
             )
 
-            status_row.addWidget(
+            layout.addWidget(
                 excluded
             )
 
-        status_row.addStretch()
+        layout.addStretch()
 
-        details_layout.addLayout(
-            status_row
-        )
-
-        metadata = QLabel(
-            self._build_metadata_text()
-        )
-
-        metadata.setObjectName(
-            "metadataText"
-        )
-
-        metadata.setWordWrap(
-            True
-        )
-
-        details_layout.addWidget(
-            metadata
-        )
-
-        if self.listing.isbn:
-            isbn = QLabel(
-                f"ISBN: {self.listing.isbn}"
-            )
-
-            isbn.setObjectName(
-                "isbnText"
-            )
-
-            isbn.setTextInteractionFlags(
-                Qt.TextInteractionFlag.TextSelectableByMouse
-            )
-
-            details_layout.addWidget(
-                isbn
-            )
-
-        dates = QLabel(
-            self._build_date_text()
-        )
-
-        dates.setObjectName(
-            "dateText"
-        )
-
-        dates.setWordWrap(
-            True
-        )
-
-        details_layout.addWidget(
-            dates
-        )
-
-        details_layout.addStretch()
-
-        main_layout.addLayout(
-            details_layout,
-            1,
-        )
-
-        button_layout = (
-            QVBoxLayout()
-        )
-
-        button_layout.setSpacing(
-            8
-        )
-
-        edit_button = QPushButton(
-            "EDIT"
-        )
-
-        edit_button.setObjectName(
-            "primaryCardButton"
-        )
-
-        edit_button.setCursor(
-            Qt.CursorShape.PointingHandCursor
-        )
-
-        edit_button.clicked.connect(
-            lambda: (
-                self.edit_requested.emit(
-                    self.listing.id
-                )
-            )
-        )
-
-        manage_button = QPushButton(
-            "MANAGE"
-        )
-
-        manage_button.setObjectName(
-            "secondaryCardButton"
-        )
-
-        manage_button.setCursor(
-            Qt.CursorShape.PointingHandCursor
-        )
-
-        manage_button.clicked.connect(
-            lambda: (
-                self.manage_requested.emit(
-                    self.listing.id
-                )
-            )
-        )
-
-        folder_button = QPushButton(
-            "PHOTO FOLDER"
-        )
-
-        folder_button.setObjectName(
-            "secondaryCardButton"
-        )
-
-        folder_button.setCursor(
-            Qt.CursorShape.PointingHandCursor
-        )
-
-        folder_button.clicked.connect(
-            self._open_photo_folder
-        )
-
-        button_layout.addWidget(
-            edit_button
-        )
-
-        button_layout.addWidget(
-            manage_button
-        )
-
-        button_layout.addWidget(
-            folder_button
-        )
-
-        button_layout.addStretch()
-
-        main_layout.addLayout(
-            button_layout
-        )
-
-    def _status_text(
-        self,
-    ) -> str:
-        if self.listing.paused_indefinitely:
-            return (
-                "Paused indefinitely"
-            )
-
-        if (
-            self.listing.paused_until
-            is not None
-        ):
-            return (
-                "Paused until "
-                f"{self.listing.paused_until:%d %b %Y}"
-            )
-
-        return (
-            self.listing
-            .status
-            .value
-            .capitalize()
-        )
-
-    def _status_object_name(
-        self,
-    ) -> str:
-        status = (
-            self.listing.status.value
-        )
-
-        mapping = {
-            "active": "activeBadge",
-            "paused": "pausedBadge",
-            "sold": "soldBadge",
-            "archived": "archivedBadge",
-        }
-
-        return mapping.get(
-            status,
-            "statusBadge",
-        )
+        return layout
 
     def _create_photo(
         self,
@@ -386,8 +270,8 @@ class ListingCard(QFrame):
         )
 
         container.setFixedSize(
-            145,
-            145,
+            112,
+            112,
         )
 
         layout = QVBoxLayout(
@@ -408,25 +292,17 @@ class ListingCard(QFrame):
         )
 
         label.setFixedSize(
-            145,
-            145,
+            112,
+            112,
         )
 
         try:
-            if (
-                self._preloaded_photos
-                is None
-            ):
-                photos = (
-                    get_listing_photos(
-                        self.listing.id
-                    )
+            if self._preloaded_photos is None:
+                photos = get_listing_photos(
+                    self.listing.id
                 )
-
             else:
-                photos = (
-                    self._preloaded_photos
-                )
+                photos = self._preloaded_photos
 
             cover = next(
                 (
@@ -451,16 +327,14 @@ class ListingCard(QFrame):
                 )
 
             else:
-                thumbnail = (
-                    get_thumbnail_path(
-                        cover
-                    )
+                thumbnail = get_thumbnail_path(
+                    cover
                 )
 
-                pixmap = QPixmap(
-                    str(
-                        thumbnail
-                    )
+                pixmap = get_scaled_pixmap(
+                    thumbnail,
+                    104,
+                    104,
                 )
 
                 if pixmap.isNull():
@@ -474,12 +348,7 @@ class ListingCard(QFrame):
 
                 else:
                     label.setPixmap(
-                        pixmap.scaled(
-                            135,
-                            135,
-                            Qt.AspectRatioMode.KeepAspectRatio,
-                            Qt.TransformationMode.SmoothTransformation,
-                        )
+                        pixmap
                     )
 
         except Exception:
@@ -497,35 +366,170 @@ class ListingCard(QFrame):
 
         return container
 
+    def _create_actions(
+        self,
+    ) -> QVBoxLayout:
+        layout = QVBoxLayout()
+
+        layout.setSpacing(
+            6
+        )
+
+        edit_button = QPushButton(
+            "EDIT LISTING"
+        )
+
+        edit_button.setObjectName(
+            "primaryCardButton"
+        )
+
+        edit_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        edit_button.setMinimumWidth(
+            125
+        )
+
+        edit_button.setToolTip(
+            "Edit listing information and photos"
+        )
+
+        edit_button.clicked.connect(
+            lambda: self.edit_requested.emit(
+                self.listing.id
+            )
+        )
+
+        manage_button = QPushButton(
+            "MANAGE"
+        )
+
+        manage_button.setObjectName(
+            "secondaryCardButton"
+        )
+
+        manage_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        manage_button.setMinimumWidth(
+            125
+        )
+
+        manage_button.setToolTip(
+            (
+                "Pause, sell, archive, exclude "
+                "or manage listing status"
+            )
+        )
+
+        manage_button.clicked.connect(
+            lambda: self.manage_requested.emit(
+                self.listing.id
+            )
+        )
+
+        folder_button = QPushButton(
+            "PHOTOS"
+        )
+
+        folder_button.setObjectName(
+            "secondaryCardButton"
+        )
+
+        folder_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        folder_button.setMinimumWidth(
+            125
+        )
+
+        folder_button.setToolTip(
+            "Open this listing's local photo folder"
+        )
+
+        folder_button.clicked.connect(
+            self._open_photo_folder
+        )
+
+        layout.addWidget(
+            edit_button
+        )
+
+        layout.addWidget(
+            manage_button
+        )
+
+        layout.addWidget(
+            folder_button
+        )
+
+        layout.addStretch()
+
+        return layout
+
+    def _status_text(
+        self,
+    ) -> str:
+        if self.listing.paused_indefinitely:
+            return "Paused"
+
+        if self.listing.paused_until is not None:
+            return (
+                "Paused until "
+                f"{self.listing.paused_until:%d %b}"
+            )
+
+        return (
+            self.listing
+            .status
+            .value
+            .capitalize()
+        )
+
+    def _status_object_name(
+        self,
+    ) -> str:
+        mapping = {
+            "active": "activeBadge",
+            "paused": "pausedBadge",
+            "sold": "soldBadge",
+            "archived": "archivedBadge",
+        }
+
+        return mapping.get(
+            self.listing.status.value,
+            "statusBadge",
+        )
+
     def _build_metadata_text(
         self,
     ) -> str:
         values: list[str] = []
 
         if self.listing.category:
-            values.append(
-                self.listing.category
-            )
+            category = self.listing.category
 
-        if self.listing.subcategory:
+            if self.listing.subcategory:
+                category += (
+                    " › "
+                    f"{self.listing.subcategory}"
+                )
+
             values.append(
-                self.listing.subcategory
+                category
             )
 
         if self.listing.brand:
             values.append(
-                (
-                    "Brand: "
-                    f"{self.listing.brand}"
-                )
+                f"Brand: {self.listing.brand}"
             )
 
         if self.listing.size:
             values.append(
-                (
-                    "Size: "
-                    f"{self.listing.size}"
-                )
+                f"Size: {self.listing.size}"
             )
 
         if self.listing.condition:
@@ -546,79 +550,86 @@ class ListingCard(QFrame):
 
         if not values:
             return (
-                "No additional listing details."
+                "No additional listing details"
             )
 
-        return "  •  ".join(
+        return "   •   ".join(
             values
         )
 
-    def _build_date_text(
+    def _build_secondary_text(
         self,
     ) -> str:
-        original = (
-            self.listing.original_created_date
-        )
+        values: list[str] = []
 
-        original_text = (
-            original.strftime(
-                "%d %b %Y"
+        if self.listing.isbn:
+            values.append(
+                f"ISBN: {self.listing.isbn}"
             )
-        )
 
-        if (
-            self.listing.last_relisted_date
-            is None
-        ):
-            last_relisted = "Never"
+        if self.listing.last_relisted_date is None:
+            reference_date = (
+                self.listing.original_created_date
+            )
 
-            days = (
-                date.today()
-                - original
-            ).days
+            days = max(
+                0,
+                (
+                    date.today()
+                    - reference_date
+                ).days,
+            )
 
-            age_text = (
-                f"{days} days since original listing"
+            values.append(
+                f"Never relisted · {days} days old"
             )
 
         else:
-            last_date = (
+            reference_date = (
                 self.listing.last_relisted_date
             )
 
-            last_relisted = (
-                last_date.strftime(
-                    "%d %b %Y"
+            days = max(
+                0,
+                (
+                    date.today()
+                    - reference_date
+                ).days,
+            )
+
+            values.append(
+                (
+                    "Last relisted "
+                    f"{reference_date:%d %b %Y}"
+                    f" · {days} days ago"
                 )
             )
 
-            days = (
-                date.today()
-                - last_date
-            ).days
+        relist_count = (
+            self.listing.number_of_times_relisted
+        )
 
-            age_text = (
-                f"{days} days since last relist"
+        if relist_count == 1:
+            values.append(
+                "Relisted once"
+            )
+        else:
+            values.append(
+                (
+                    f"Relisted "
+                    f"{relist_count} times"
+                )
             )
 
-        return (
-            f"Original: {original_text}"
-            "   |   "
-            f"Last relisted: {last_relisted}"
-            "   |   "
-            f"{age_text}"
-            "   |   "
-            "Relisted "
-            f"{self.listing.number_of_times_relisted} times"
+        return "   •   ".join(
+            values
         )
 
     def _open_photo_folder(
         self,
     ) -> None:
-        folder = (
-            get_listing_photos_directory(
-                self.listing.id
-            )
+        folder = get_listing_photos_directory(
+            self.listing.id
         )
 
         folder.mkdir(
@@ -632,136 +643,4 @@ class ListingCard(QFrame):
                     folder.resolve()
                 )
             )
-        )
-
-    def _apply_styles(
-        self,
-    ) -> None:
-        self.setStyleSheet(
-            """
-            #listingCard {
-                background-color: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 10px;
-            }
-
-            #listingCard:hover {
-                border: 1px solid #9ca3af;
-            }
-
-            #photoContainer {
-                background-color: #f3f4f6;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-            }
-
-            #noPhoto {
-                color: #9ca3af;
-                font-size: 13px;
-            }
-
-            #listingTitle,
-            #listingPrice {
-                color: #111827;
-                font-size: 18px;
-                font-weight: 700;
-            }
-
-            #activeBadge {
-                background-color: #dcfce7;
-                color: #166534;
-                border-radius: 5px;
-                padding: 4px 8px;
-                font-size: 12px;
-                font-weight: 600;
-            }
-
-            #pausedBadge {
-                background-color: #fef3c7;
-                color: #92400e;
-                border-radius: 5px;
-                padding: 4px 8px;
-                font-size: 12px;
-                font-weight: 600;
-            }
-
-            #soldBadge {
-                background-color: #dbeafe;
-                color: #1e40af;
-                border-radius: 5px;
-                padding: 4px 8px;
-                font-size: 12px;
-                font-weight: 600;
-            }
-
-            #archivedBadge {
-                background-color: #e5e7eb;
-                color: #4b5563;
-                border-radius: 5px;
-                padding: 4px 8px;
-                font-size: 12px;
-                font-weight: 600;
-            }
-
-            #priorityBadge {
-                background-color: #f3f4f6;
-                color: #4b5563;
-                border-radius: 5px;
-                padding: 4px 8px;
-                font-size: 12px;
-            }
-
-            #excludedBadge {
-                background-color: #fee2e2;
-                color: #991b1b;
-                border-radius: 5px;
-                padding: 4px 8px;
-                font-size: 12px;
-                font-weight: 600;
-            }
-
-            #metadataText {
-                color: #4b5563;
-                font-size: 13px;
-            }
-
-            #isbnText {
-                color: #374151;
-                font-size: 12px;
-                font-weight: 600;
-            }
-
-            #dateText {
-                color: #6b7280;
-                font-size: 12px;
-            }
-
-            #primaryCardButton {
-                background-color: #1f2937;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 13px;
-                min-width: 110px;
-                font-weight: 600;
-            }
-
-            #primaryCardButton:hover {
-                background-color: #374151;
-            }
-
-            #secondaryCardButton {
-                background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px 13px;
-                min-width: 110px;
-                font-weight: 600;
-            }
-
-            #secondaryCardButton:hover {
-                background-color: #f3f4f6;
-            }
-            """
         )
