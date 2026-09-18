@@ -1,14 +1,61 @@
 from pathlib import Path
 
-from PyInstaller.building.build_main import Analysis
 from PyInstaller.building.api import (
     COLLECT,
     EXE,
     PYZ,
 )
+from PyInstaller.building.build_main import (
+    Analysis,
+)
 
 
 PROJECT_ROOT = Path.cwd()
+
+ICON_PATH = (
+    PROJECT_ROOT
+    / "app"
+    / "assets"
+    / "app_icon.ico"
+)
+
+RUNTIME_ICON_PATH = (
+    PROJECT_ROOT
+    / "app"
+    / "assets"
+    / "app_icon.png"
+)
+
+VERSION_INFO_PATH = (
+    PROJECT_ROOT
+    / "version_info.txt"
+)
+
+
+if not ICON_PATH.exists():
+    raise FileNotFoundError(
+        (
+            "Application icon is missing.\n"
+            "Run:\n"
+            "python build_brand_assets.py"
+        )
+    )
+
+
+if not RUNTIME_ICON_PATH.exists():
+    raise FileNotFoundError(
+        (
+            "Runtime application icon is missing.\n"
+            "Run:\n"
+            "python build_brand_assets.py"
+        )
+    )
+
+
+if not VERSION_INFO_PATH.exists():
+    raise FileNotFoundError(
+        "version_info.txt is missing."
+    )
 
 
 hidden_imports = [
@@ -35,7 +82,14 @@ a = Analysis(
         )
     ],
     binaries=[],
-    datas=[],
+    datas=[
+        (
+            str(
+                RUNTIME_ICON_PATH
+            ),
+            "app/assets",
+        ),
+    ],
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
@@ -63,6 +117,12 @@ exe = EXE(
     upx=False,
     console=False,
     disable_windowed_traceback=False,
+    icon=str(
+        ICON_PATH
+    ),
+    version=str(
+        VERSION_INFO_PATH
+    ),
 )
 
 

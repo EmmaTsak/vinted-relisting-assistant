@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections.abc import Callable
 
@@ -26,6 +26,9 @@ from app.services.lifecycle_service import (
 from app.services.listing_service import (
     get_listing_photos_for_listings,
 )
+from app.ui.components.states.empty_state import (
+    FriendlyEmptyState,
+)
 from app.ui.listing_card import (
     ListingCard,
 )
@@ -35,8 +38,13 @@ class StatusListingsPage(QWidget):
     """
     Reusable inventory page for Sold and Archived listings.
 
-    Listings are loaded once during refresh and search is
-    performed locally for fast filtering.
+    The normal inventory remains neutral and practical.
+
+    Friendly personality is used only when:
+    - the section is empty
+    - a harmless search returns no results
+
+    Errors remain visually and verbally sober.
     """
 
     edit_requested = Signal(int)
@@ -46,6 +54,7 @@ class StatusListingsPage(QWidget):
         self,
         section_name: str,
         description: str,
+        empty_title: str,
         empty_message: str,
         search_placeholder: str,
         loader: Callable[[], list[Listing]],
@@ -55,11 +64,21 @@ class StatusListingsPage(QWidget):
             parent
         )
 
-        self.section_name = section_name
+        self.section_name = (
+            section_name
+        )
 
-        self.description = description
+        self.description = (
+            description
+        )
 
-        self.empty_message = empty_message
+        self.empty_title = (
+            empty_title
+        )
+
+        self.empty_message = (
+            empty_message
+        )
 
         self.search_placeholder = (
             search_placeholder
@@ -74,6 +93,10 @@ class StatusListingsPage(QWidget):
         self._photos_by_listing = None
 
         self._build_ui()
+
+    # =====================================================
+    # UI
+    # =====================================================
 
     def _build_ui(
         self,
@@ -128,7 +151,8 @@ class StatusListingsPage(QWidget):
 
         self.count_label = QLabel(
             (
-                f"0 {self.section_name.upper()} "
+                f"0 "
+                f"{self.section_name.upper()} "
                 "LISTINGS"
             )
         )
@@ -295,8 +319,7 @@ class StatusListingsPage(QWidget):
         """
         Reload the underlying Sold/Archived inventory.
 
-        Photo metadata is loaded in one batch so ListingCard
-        does not need one photo query per visible listing.
+        Photo metadata is loaded in one batch.
         """
         try:
             listings = list(
@@ -318,16 +341,20 @@ class StatusListingsPage(QWidget):
 
             self._clear_cards()
 
-            self._show_message(
+            self._show_error_state(
                 (
-                    "Unable to load listings.\n\n"
-                    f"{exc}"
-                )
+                    "The listings could not be loaded."
+                ),
+                str(
+                    exc
+                ),
             )
 
             return
 
-        self._all_listings = listings
+        self._all_listings = (
+            listings
+        )
 
         count = len(
             listings
@@ -353,8 +380,8 @@ class StatusListingsPage(QWidget):
                 )
 
             except Exception:
-                # Cards can still fall back to their normal
-                # per-listing photo lookup if batching fails.
+                # Listing cards retain their existing fallback
+                # photo loading if batch loading is unavailable.
                 self._photos_by_listing = None
 
         else:
@@ -404,6 +431,7 @@ class StatusListingsPage(QWidget):
                 self.results_label.setText(
                     "1 item"
                 )
+
             else:
                 self.results_label.setText(
                     f"{total} items"
@@ -437,7 +465,9 @@ class StatusListingsPage(QWidget):
 
         return any(
             query
-            in str(value).casefold()
+            in str(
+                value
+            ).casefold()
             for value in values
             if value
         )
@@ -463,16 +493,30 @@ class StatusListingsPage(QWidget):
                     .text()
                     .strip()
                 ):
-                    self._show_message(
-                        (
-                            "No listings match your "
-                            "current search."
-                        )
+                    self._show_empty_state(
+                        title=(
+                            "No matches this time"
+                        ),
+                        message=(
+                            "Try another word, or clear the "
+                            "search to see everything again."
+                        ),
+                        action_text=(
+                            "CLEAR SEARCH"
+                        ),
+                        action=(
+                            self.search_input.clear
+                        ),
                     )
 
                 else:
-                    self._show_message(
-                        self.empty_message
+                    self._show_empty_state(
+                        title=(
+                            self.empty_title
+                        ),
+                        message=(
+                            self.empty_message
+                        ),
                     )
 
                 return
@@ -519,45 +563,101 @@ class StatusListingsPage(QWidget):
 
             self.container.update()
 
-    def _show_message(
+    def _show_empty_state(
         self,
-        text: str,
+        title: str,
+        message: str,
+        action_text: str | None = None,
+        action: Callable[[], None] | None = None,
     ) -> None:
+        """
+        Designed Zone B state.
+
+        Only used for harmless states where nothing went wrong.
+        """
+        state = FriendlyEmptyState(
+            title=title,
+            message=message,
+            action_text=action_text,
+            action=action,
+        )
+
+        self.cards_layout.insertWidget(
+            0,
+            state,
+        )
+
+    def _show_error_state(
+        self,
+        message: str,
+        details: str,
+    ) -> None:
+        """
+        Serious errors deliberately stay plain and direct.
+        """
         frame = QFrame()
 
         frame.setObjectName(
-            "informationBox"
+            "errorState"
         )
 
-        frame_layout = QVBoxLayout(
+        layout = QVBoxLayout(
             frame
         )
 
-        frame_layout.setContentsMargins(
+        layout.setContentsMargins(
             24,
-            34,
             24,
-            34,
+            24,
+            24,
         )
 
-        label = QLabel(
-            text
+        layout.setSpacing(
+            8
         )
 
-        label.setObjectName(
-            "informationText"
+        heading = QLabel(
+            "Unable to load listings"
         )
 
-        label.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
+        heading.setObjectName(
+            "placeholderTitle"
         )
 
-        label.setWordWrap(
+        heading.setWordWrap(
             True
         )
 
-        frame_layout.addWidget(
-            label
+        text = QLabel(
+            message
+        )
+
+        text.setWordWrap(
+            True
+        )
+
+        details_label = QLabel(
+            details
+        )
+
+        details_label.setWordWrap(
+            True
+        )
+
+        details_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+
+        layout.addWidget(
+            heading
+        )
+
+        layout.addWidget(
+            text
+        )
+
+        layout.addWidget(
+            details_label
         )
 
         self.cards_layout.insertWidget(
@@ -572,11 +672,15 @@ class StatusListingsPage(QWidget):
             self.cards_layout.count()
             > 1
         ):
-            item = self.cards_layout.takeAt(
-                0
+            item = (
+                self.cards_layout.takeAt(
+                    0
+                )
             )
 
-            widget = item.widget()
+            widget = (
+                item.widget()
+            )
 
             if widget is not None:
                 widget.deleteLater()
@@ -611,10 +715,12 @@ class SoldListingsPage(
                 "Items marked as sold remain stored locally "
                 "with their listing information and photos."
             ),
+            empty_title=(
+                "Nothing sold here yet"
+            ),
             empty_message=(
-                "No sold listings yet.\n\n"
-                "When you mark an item as sold, "
-                "it will appear here."
+                "When you mark an item as sold, itâ€™ll settle "
+                "in here with its photos and details."
             ),
             search_placeholder=(
                 "Search sold listings by title, ISBN, "
@@ -638,10 +744,13 @@ class ArchivedListingsPage(
                 "Archived listings remain stored locally "
                 "and stay outside the relisting rotation."
             ),
+            empty_title=(
+                "Your archive is nice and tidy"
+            ),
             empty_message=(
-                "No archived listings.\n\n"
-                "Archived items are kept safely until you "
-                "restore them or permanently delete them."
+                "Nothing is tucked away right now. "
+                "Archived listings will wait here whenever "
+                "you need them."
             ),
             search_placeholder=(
                 "Search archived listings by title, ISBN, "

@@ -24,12 +24,11 @@ THEME_DARK: Final[str] = "dark"
 
 class ThemeManager(QObject):
     """
-    Central theme manager for the entire application.
+    Central appearance manager.
 
-    Individual screens in earlier development stages used their own
-    stylesheets. This manager clears those local styles whenever a
-    widget appears and lets one application-wide stylesheet control
-    the appearance consistently.
+    The application still contains a few older widget-local
+    stylesheets from earlier development stages. They are cleared
+    when widgets appear so the global product theme wins.
     """
 
     def __init__(
@@ -54,15 +53,14 @@ class ThemeManager(QObject):
 
         self._connect_system_theme_signal()
 
+    # =====================================================
+    # Public API
+    # =====================================================
+
     def apply(
         self,
         preference: str,
     ) -> None:
-        """
-        Apply System, Light or Dark appearance.
-
-        System follows the current operating-system colour scheme.
-        """
         normalized = (
             str(
                 preference
@@ -86,7 +84,10 @@ class ThemeManager(QObject):
 
         self._clear_existing_local_styles()
 
-        if effective_theme == THEME_DARK:
+        if (
+            effective_theme
+            == THEME_DARK
+        ):
             palette = (
                 self._create_dark_palette()
             )
@@ -119,22 +120,17 @@ class ThemeManager(QObject):
     def effective_theme(
         self,
     ) -> str:
-        """
-        Return the currently rendered theme.
-        """
         return self._effective_theme()
+
+    # =====================================================
+    # System appearance
+    # =====================================================
 
     def eventFilter(
         self,
         watched: QObject,
         event: QEvent,
     ) -> bool:
-        """
-        Remove old widget-specific styles whenever widgets are shown.
-
-        This also handles cards/dialogs created after the application
-        has already started.
-        """
         if (
             event.type()
             == QEvent.Type.Show
@@ -155,9 +151,6 @@ class ThemeManager(QObject):
     def _connect_system_theme_signal(
         self,
     ) -> None:
-        """
-        Follow Windows theme changes while System mode is selected.
-        """
         try:
             style_hints = (
                 self.application
@@ -212,12 +205,6 @@ class ThemeManager(QObject):
     def _system_is_dark(
         self,
     ) -> bool:
-        """
-        Ask Qt for the operating-system colour scheme.
-
-        Falls back to the original application palette when the
-        installed Qt version cannot expose the OS colour scheme.
-        """
         try:
             scheme = (
                 self.application
@@ -254,18 +241,15 @@ class ThemeManager(QObject):
             < 128
         )
 
+    # =====================================================
+    # Legacy style cleanup
+    # =====================================================
+
     def _clear_existing_local_styles(
         self,
     ) -> None:
-        """
-        Remove all older widget-level stylesheets.
-
-        The application-wide theme stylesheet then becomes the single
-        source of truth for colours.
-        """
         for widget in (
-            self.application
-            .allWidgets()
+            self.application.allWidgets()
         ):
             if widget.styleSheet():
                 widget.setStyleSheet(
@@ -276,9 +260,6 @@ class ThemeManager(QObject):
         self,
         widget: QWidget,
     ) -> None:
-        """
-        Clear styles from one newly displayed widget and its children.
-        """
         if widget.styleSheet():
             widget.setStyleSheet(
                 ""
@@ -292,6 +273,10 @@ class ThemeManager(QObject):
                     ""
                 )
 
+    # =====================================================
+    # Qt palettes
+    # =====================================================
+
     def _create_light_palette(
         self,
     ) -> QPalette:
@@ -300,84 +285,84 @@ class ThemeManager(QObject):
         palette.setColor(
             QPalette.ColorRole.Window,
             QColor(
-                "#f5f6f8"
+                "#F9ECEF"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.WindowText,
             QColor(
-                "#111827"
+                "#2D2427"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.Base,
             QColor(
-                "#ffffff"
+                "#FFF3F5"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.AlternateBase,
             QColor(
-                "#f9fafb"
+                "#F7E5EA"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.Text,
             QColor(
-                "#111827"
+                "#2D2427"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.Button,
             QColor(
-                "#ffffff"
+                "#FFF3F5"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.ButtonText,
             QColor(
-                "#111827"
+                "#2D2427"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.Highlight,
             QColor(
-                "#dbeafe"
+                "#B83268"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.HighlightedText,
             QColor(
-                "#111827"
+                "#FFFFFF"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.ToolTipBase,
             QColor(
-                "#111827"
+                "#2D2427"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.ToolTipText,
             QColor(
-                "#ffffff"
+                "#F9ECEF"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.PlaceholderText,
             QColor(
-                "#9ca3af"
+                "#9A858D"
             ),
         )
 
@@ -391,164 +376,241 @@ class ThemeManager(QObject):
         palette.setColor(
             QPalette.ColorRole.Window,
             QColor(
-                "#111827"
+                "#1E191B"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.WindowText,
             QColor(
-                "#f3f4f6"
+                "#F8F2F4"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.Base,
             QColor(
-                "#1f2937"
+                "#2A2226"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.AlternateBase,
             QColor(
-                "#273449"
+                "#352A2F"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.Text,
             QColor(
-                "#f3f4f6"
+                "#F8F2F4"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.Button,
             QColor(
-                "#273449"
+                "#2A2226"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.ButtonText,
             QColor(
-                "#f3f4f6"
+                "#F8F2F4"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.Highlight,
             QColor(
-                "#2563eb"
+                "#F08DB1"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.HighlightedText,
             QColor(
-                "#ffffff"
+                "#291820"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.ToolTipBase,
             QColor(
-                "#f9fafb"
+                "#F8F2F4"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.ToolTipText,
             QColor(
-                "#111827"
+                "#2A2226"
             ),
         )
 
         palette.setColor(
             QPalette.ColorRole.PlaceholderText,
             QColor(
-                "#9ca3af"
+                "#A9959D"
             ),
         )
 
         return palette
+
+    # =====================================================
+    # Global stylesheet
+    # =====================================================
 
     def _build_stylesheet(
         self,
         dark: bool,
     ) -> str:
         if dark:
-            background = "#111827"
-            surface = "#1f2937"
-            surface_alt = "#273449"
-            surface_hover = "#334155"
+            # ---------------------------------------------
+            # Warm dark mode
+            # ---------------------------------------------
 
-            text = "#f3f4f6"
-            secondary_text = "#cbd5e1"
-            muted_text = "#94a3b8"
+            background = "#1E191B"
 
-            border = "#374151"
-            border_hover = "#64748b"
+            surface = "#2A2226"
 
-            primary = "#2563eb"
-            primary_hover = "#1d4ed8"
+            surface_alt = "#352A2F"
 
-            sidebar = "#0f172a"
-            sidebar_hover = "#1e293b"
-            sidebar_selected = "#334155"
+            surface_hover = "#403238"
 
-            success_background = "#14532d"
-            success_text = "#dcfce7"
+            text = "#F8F2F4"
 
-            warning_background = "#78350f"
-            warning_text = "#fef3c7"
+            secondary_text = "#E1D3D8"
 
-            danger_background = "#7f1d1d"
-            danger = "#dc2626"
-            danger_hover = "#b91c1c"
-            danger_text = "#fee2e2"
+            muted_text = "#BBAAB0"
 
-            info_background = "#1e3a8a"
-            info_text = "#dbeafe"
+            border = "#4A3A41"
+
+            border_hover = "#765A66"
+
+            primary = "#F08DB1"
+
+            primary_hover = "#FA9FC0"
+
+            primary_text = "#291820"
+
+            sidebar = "#261E22"
+
+            sidebar_hover = "#35272E"
+
+            sidebar_selected = "#F08DB1"
+
+            sidebar_text = "#F8F2F4"
+
+            sidebar_muted = "#C7B5BC"
+
+            sidebar_selected_text = "#291820"
+
+            success_background = "#173E2B"
+
+            success_text = "#BDE8CD"
+
+            warning_background = "#49351C"
+
+            warning_text = "#F5D59C"
+
+            danger_background = "#4A2228"
+
+            danger = "#B94B5A"
+
+            danger_hover = "#A33B49"
+
+            danger_text = "#F5C8CE"
+
+            info_background = "#24364D"
+
+            info_text = "#C9DCF5"
+
+            accent_soft = "#422B35"
+
+            accent_soft_text = "#F5CBDC"
+
+            scrollbar = "#765A66"
 
         else:
-            background = "#f5f6f8"
-            surface = "#ffffff"
-            surface_alt = "#f9fafb"
-            surface_hover = "#f3f4f6"
+            # ---------------------------------------------
+            # Warm light mode
+            # ---------------------------------------------
 
-            text = "#111827"
-            secondary_text = "#4b5563"
-            muted_text = "#6b7280"
+            background = "#F9ECEF"
 
-            border = "#e5e7eb"
-            border_hover = "#9ca3af"
+            surface = "#FFF3F5"
 
-            primary = "#1f2937"
-            primary_hover = "#374151"
+            surface_alt = "#F7E5EA"
 
-            sidebar = "#1f2937"
-            sidebar_hover = "#374151"
-            sidebar_selected = "#4b5563"
+            surface_hover = "#F1D8E0"
 
-            success_background = "#dcfce7"
-            success_text = "#166534"
+            text = "#2D2427"
 
-            warning_background = "#fef3c7"
-            warning_text = "#92400e"
+            secondary_text = "#59474E"
 
-            danger_background = "#fee2e2"
-            danger = "#b91c1c"
-            danger_hover = "#991b1b"
-            danger_text = "#991b1b"
+            muted_text = "#78666D"
 
-            info_background = "#dbeafe"
-            info_text = "#1e40af"
+            border = "#DFC5CF"
+
+            border_hover = "#CA93A6"
+
+            primary = "#B83268"
+
+            primary_hover = "#9E2858"
+
+            primary_text = "#FFFFFF"
+
+            sidebar = "#F3D5DF"
+
+            sidebar_hover = "#EBC3D1"
+
+            sidebar_selected = "#B83268"
+
+            sidebar_text = "#49353D"
+
+            sidebar_muted = "#806B73"
+
+            sidebar_selected_text = "#FFFFFF"
+
+            success_background = "#E7F6ED"
+
+            success_text = "#24623A"
+
+            warning_background = "#FFF2D9"
+
+            warning_text = "#7A5314"
+
+            danger_background = "#FCE6E8"
+
+            danger = "#B63848"
+
+            danger_hover = "#982D3B"
+
+            danger_text = "#872633"
+
+            info_background = "#E8EFFA"
+
+            info_text = "#34547C"
+
+            accent_soft = "#FBE7EE"
+
+            accent_soft_text = "#853251"
+
+            scrollbar = "#CFA8B7"
 
         return f"""
+        /*
+        ====================================================
+        BASE
+        ====================================================
+        */
+
         * {{
             font-family: "Segoe UI";
+            font-size: 13px;
         }}
 
         QMainWindow,
@@ -576,62 +638,86 @@ class ThemeManager(QObject):
             background-color: {background};
         }}
 
+        /*
+        ====================================================
+        SIDEBAR / BRAND
+        ====================================================
+        */
+
         #sidebar {{
             background-color: {sidebar};
             border: none;
         }}
 
+        #brandIdentity {{
+            background-color: transparent;
+            border: none;
+        }}
+
         #sidebarAppName {{
-            color: white;
-            font-size: 24px;
+            color: {sidebar_text};
+            font-size: 22px;
             font-weight: 700;
         }}
 
         #sidebarSubtitle {{
-            color: #cbd5e1;
+            color: {sidebar_muted};
+            font-size: 12px;
         }}
 
         #navigationButton {{
             background-color: transparent;
-            color: #d1d5db;
+            color: {sidebar_text};
             border: none;
-            border-radius: 7px;
+            border-radius: 10px;
             text-align: left;
-            padding: 11px 12px;
+            padding: 10px 12px;
         }}
 
         #navigationButton:hover {{
             background-color: {sidebar_hover};
-            color: white;
+            color: {sidebar_text};
         }}
 
         #navigationButton:checked {{
             background-color: {sidebar_selected};
-            color: white;
+            color: {sidebar_selected_text};
             font-weight: 600;
         }}
 
         #versionLabel {{
-            color: #94a3b8;
-            font-size: 12px;
+            color: {sidebar_muted};
+            font-size: 11px;
         }}
+
+        /*
+        ====================================================
+        TYPOGRAPHY
+        ====================================================
+        */
 
         #pageTitle {{
             color: {text};
-            font-size: 28px;
+            font-size: 27px;
             font-weight: 700;
         }}
 
         #preparationHeading,
         #backupHeading {{
             color: {text};
-            font-size: 24px;
+            font-size: 23px;
+            font-weight: 700;
+        }}
+
+        #placeholderTitle {{
+            color: {text};
+            font-size: 16px;
             font-weight: 700;
         }}
 
         #headerPrice {{
             color: {text};
-            font-size: 22px;
+            font-size: 21px;
             font-weight: 700;
         }}
 
@@ -647,7 +733,7 @@ class ThemeManager(QObject):
         #listingPrice,
         #queuePrice {{
             color: {text};
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 700;
         }}
 
@@ -666,7 +752,9 @@ class ThemeManager(QObject):
         #activityDate,
         #panelMessage,
         #informationText,
-        #settingsNoteText {{
+        #settingsNoteText,
+        #categoryHelpText,
+        #helpText {{
             color: {muted_text};
         }}
 
@@ -679,6 +767,12 @@ class ThemeManager(QObject):
             color: {secondary_text};
             font-weight: 700;
         }}
+
+        /*
+        ====================================================
+        CARDS / PANELS
+        ====================================================
+        */
 
         #pagePlaceholder,
         #settingsFrame,
@@ -693,10 +787,11 @@ class ThemeManager(QObject):
         #dashboardPanel,
         #photoPanel,
         #detailField,
-        #informationBox {{
+        #informationBox,
+        #categoryToolbar {{
             background-color: {surface};
             border: 1px solid {border};
-            border-radius: 10px;
+            border-radius: 14px;
         }}
 
         #listingCard:hover,
@@ -714,7 +809,7 @@ class ThemeManager(QObject):
         #settingsNote {{
             background-color: {surface_alt};
             border: 1px solid {border};
-            border-radius: 8px;
+            border-radius: 12px;
         }}
 
         #noPhoto,
@@ -725,7 +820,7 @@ class ThemeManager(QObject):
         #statisticTitle,
         #filterLabel {{
             color: {muted_text};
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
         }}
 
@@ -738,7 +833,7 @@ class ThemeManager(QObject):
 
         #historyMonth {{
             color: {muted_text};
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
         }}
 
@@ -749,6 +844,12 @@ class ThemeManager(QObject):
             color: {text};
             font-weight: 600;
         }}
+
+        /*
+        ====================================================
+        FORM CONTROLS
+        ====================================================
+        */
 
         QLineEdit,
         QTextEdit,
@@ -764,15 +865,26 @@ class ThemeManager(QObject):
             background-color: {surface};
             color: {text};
             border: 1px solid {border};
-            border-radius: 6px;
-            padding: 7px;
+            border-radius: 10px;
+            padding: 7px 9px;
             selection-background-color: {primary};
-            selection-color: white;
+            selection-color: {primary_text};
         }}
 
         QTextEdit:read-only,
         QPlainTextEdit:read-only {{
             background-color: {surface_alt};
+        }}
+
+        QLineEdit:hover,
+        QTextEdit:hover,
+        QPlainTextEdit:hover,
+        QComboBox:hover,
+        QSpinBox:hover,
+        QDoubleSpinBox:hover,
+        QDateEdit:hover,
+        QListWidget:hover {{
+            border-color: {border_hover};
         }}
 
         QLineEdit:focus,
@@ -792,19 +904,31 @@ class ThemeManager(QObject):
             color: {text};
             border: 1px solid {border};
             selection-background-color: {primary};
-            selection-color: white;
+            selection-color: {primary_text};
+            outline: none;
         }}
 
         QComboBox::drop-down {{
             border: none;
-            width: 24px;
+            width: 26px;
         }}
+
+        QCheckBox {{
+            color: {text};
+            spacing: 8px;
+        }}
+
+        /*
+        ====================================================
+        BUTTONS
+        ====================================================
+        */
 
         QPushButton {{
             background-color: {surface};
             color: {text};
             border: 1px solid {border};
-            border-radius: 7px;
+            border-radius: 10px;
             padding: 8px 13px;
             font-weight: 600;
         }}
@@ -826,16 +950,19 @@ class ThemeManager(QObject):
 
         #primaryButton,
         #primaryCardButton,
-        #primaryQueueButton {{
+        #primaryQueueButton,
+        #saveButton {{
             background-color: {primary};
-            color: white;
+            color: {primary_text};
             border: 1px solid {primary};
+            border-radius: 12px;
             font-weight: 700;
         }}
 
         #primaryButton:hover,
         #primaryCardButton:hover,
-        #primaryQueueButton:hover {{
+        #primaryQueueButton:hover,
+        #saveButton:hover {{
             background-color: {primary_hover};
             border-color: {primary_hover};
         }}
@@ -852,10 +979,15 @@ class ThemeManager(QObject):
         #smallButton,
         #panelActionButton,
         #historyEditButton,
-        #actionButton {{
+        #actionButton,
+        #cancelButton,
+        #photoButton,
+        #filterToggleButton,
+        #paginationButton {{
             background-color: {surface};
             color: {text};
             border: 1px solid {border};
+            border-radius: 10px;
         }}
 
         #secondaryButton:hover,
@@ -870,14 +1002,32 @@ class ThemeManager(QObject):
         #smallButton:hover,
         #panelActionButton:hover,
         #historyEditButton:hover,
-        #actionButton:hover {{
+        #actionButton:hover,
+        #cancelButton:hover,
+        #photoButton:hover,
+        #filterToggleButton:hover,
+        #paginationButton:hover {{
             background-color: {surface_hover};
+            border-color: {border_hover};
         }}
+
+        #filterToggleButton:checked {{
+            background-color: {accent_soft};
+            color: {accent_soft_text};
+            border-color: {border_hover};
+        }}
+
+        /*
+        ====================================================
+        DESTRUCTIVE ACTIONS
+        ====================================================
+        */
 
         #destructiveButton {{
             background-color: {danger};
             color: white;
             border: 1px solid {danger};
+            border-radius: 10px;
             font-weight: 700;
         }}
 
@@ -886,30 +1036,37 @@ class ThemeManager(QObject):
             border-color: {danger_hover};
         }}
 
+        /*
+        ====================================================
+        BADGES
+        ====================================================
+        */
+
         #activeBadge {{
             background-color: {success_background};
             color: {success_text};
-            border-radius: 5px;
+            border-radius: 7px;
             padding: 4px 8px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
         }}
 
-        #pausedBadge {{
+        #pausedBadge,
+        #warningBadge {{
             background-color: {warning_background};
             color: {warning_text};
-            border-radius: 5px;
+            border-radius: 7px;
             padding: 4px 8px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
         }}
 
         #soldBadge {{
             background-color: {info_background};
             color: {info_text};
-            border-radius: 5px;
+            border-radius: 7px;
             padding: 4px 8px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
         }}
 
@@ -918,26 +1075,32 @@ class ThemeManager(QObject):
             background-color: {surface_alt};
             color: {secondary_text};
             border: 1px solid {border};
-            border-radius: 5px;
+            border-radius: 7px;
             padding: 4px 8px;
-            font-size: 12px;
+            font-size: 11px;
         }}
 
         #excludedBadge {{
             background-color: {danger_background};
             color: {danger_text};
-            border-radius: 5px;
+            border-radius: 7px;
             padding: 4px 8px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
         }}
+
+        /*
+        ====================================================
+        MESSAGES
+        ====================================================
+        */
 
         #warningText {{
             background-color: {warning_background};
             color: {warning_text};
             border: 1px solid {border};
-            border-radius: 6px;
-            padding: 8px;
+            border-radius: 10px;
+            padding: 10px;
         }}
 
         #successText {{
@@ -952,7 +1115,7 @@ class ThemeManager(QObject):
             background-color: {surface};
             color: {muted_text};
             border: 1px solid {border};
-            border-radius: 10px;
+            border-radius: 14px;
             padding: 35px;
         }}
 
@@ -962,15 +1125,40 @@ class ThemeManager(QObject):
             background-color: {danger_background};
             color: {danger_text};
             border: 1px solid {danger};
-            border-radius: 10px;
+            border-radius: 14px;
             padding: 25px;
         }}
+
+        /*
+        ====================================================
+        PROGRESS
+        ====================================================
+        */
+
+        QProgressBar {{
+            background-color: {surface_alt};
+            border: 1px solid {border};
+            border-radius: 6px;
+            color: {text};
+            text-align: center;
+        }}
+
+        QProgressBar::chunk {{
+            background-color: {primary};
+            border-radius: 5px;
+        }}
+
+        /*
+        ====================================================
+        BACKUPS
+        ====================================================
+        */
 
         #backupList {{
             background-color: {surface};
             color: {text};
             border: 1px solid {border};
-            border-radius: 8px;
+            border-radius: 12px;
             padding: 6px;
         }}
 
@@ -981,22 +1169,29 @@ class ThemeManager(QObject):
 
         #backupList::item:selected {{
             background-color: {primary};
-            color: white;
+            color: {primary_text};
         }}
 
         #backupDetails {{
             background-color: {surface_alt};
             color: {secondary_text};
             border: 1px solid {border};
-            border-radius: 7px;
+            border-radius: 10px;
             padding: 12px;
         }}
+
+        /*
+        ====================================================
+        TOOLTIP / MESSAGE BOX
+        ====================================================
+        */
 
         QToolTip {{
             background-color: {text};
             color: {surface};
             border: 1px solid {border_hover};
-            padding: 5px;
+            border-radius: 6px;
+            padding: 6px;
         }}
 
         QMessageBox {{
@@ -1009,9 +1204,15 @@ class ThemeManager(QObject):
         }}
 
         QMessageBox QPushButton {{
-            min-width: 80px;
-            min-height: 28px;
+            min-width: 88px;
+            min-height: 32px;
         }}
+
+        /*
+        ====================================================
+        SCROLLBARS
+        ====================================================
+        */
 
         QScrollBar:vertical {{
             background: transparent;
@@ -1020,18 +1221,23 @@ class ThemeManager(QObject):
         }}
 
         QScrollBar::handle:vertical {{
-            background: {border_hover};
-            border-radius: 4px;
+            background: {scrollbar};
+            border-radius: 5px;
             min-height: 30px;
         }}
 
         QScrollBar::handle:vertical:hover {{
-            background: {muted_text};
+            background: {primary};
         }}
 
         QScrollBar::add-line:vertical,
         QScrollBar::sub-line:vertical {{
             height: 0px;
+        }}
+
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical {{
+            background: transparent;
         }}
 
         QScrollBar:horizontal {{
@@ -1041,9 +1247,13 @@ class ThemeManager(QObject):
         }}
 
         QScrollBar::handle:horizontal {{
-            background: {border_hover};
-            border-radius: 4px;
+            background: {scrollbar};
+            border-radius: 5px;
             min-width: 30px;
+        }}
+
+        QScrollBar::handle:horizontal:hover {{
+            background: {primary};
         }}
 
         QScrollBar::add-line:horizontal,
@@ -1051,19 +1261,33 @@ class ThemeManager(QObject):
             width: 0px;
         }}
 
+        QScrollBar::add-page:horizontal,
+        QScrollBar::sub-page:horizontal {{
+            background: transparent;
+        }}
+
+        /*
+        ====================================================
+        MENUS
+        ====================================================
+        */
+
         QMenu {{
             background-color: {surface};
             color: {text};
             border: 1px solid {border};
+            border-radius: 8px;
+            padding: 4px;
         }}
 
         QMenu::item {{
             padding: 7px 24px;
+            border-radius: 6px;
         }}
 
         QMenu::item:selected {{
             background-color: {primary};
-            color: white;
+            color: {primary_text};
         }}
         """
 

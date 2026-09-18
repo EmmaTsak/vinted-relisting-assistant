@@ -13,6 +13,13 @@ from app.models import (
     QueueEntryStatus,
     RelistHistory,
 )
+from app.services.queue_service import (
+    get_today_queue,
+)
+from app.services.settings_service import (
+    default_settings,
+    load_settings,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +57,10 @@ class DashboardStatistics:
     most_relisted_listing_title: str | None
     most_relisted_count: int | None
 
-    recent_relists: tuple[RecentRelist, ...]
+    recent_relists: tuple[
+        RecentRelist,
+        ...
+    ]
 
 
 def get_dashboard_statistics(
@@ -59,8 +69,16 @@ def get_dashboard_statistics(
     """
     Calculate dashboard statistics from the local SQLite database.
 
-    Imported relist counts without known historical dates are kept
-    in their listing totals, but are not invented as history events.
+    Today's queue statistics deliberately come from the same
+    queue service used by Today's Queue.
+
+    This is important because raw DailyQueueEntry rows do not by
+    themselves know whether the user has changed:
+    - the daily relist limit
+    - the minimum relist age
+
+    Using QueueSnapshot keeps the Dashboard and Today's Queue
+    consistent with one another.
     """
     target_date = (
         today
@@ -74,14 +92,67 @@ def get_dashboard_statistics(
         )
     )
 
-    start_of_month = target_date.replace(
-        day=1
+    start_of_month = (
+        target_date.replace(
+            day=1
+        )
     )
+
+    # =====================================================
+    # Current queue state
+    # =====================================================
+
+    try:
+        settings = (
+            load_settings()
+        )
+
+    except Exception:
+        # A damaged settings file should not make the entire
+        # Dashboard unusable.
+        settings = (
+            default_settings()
+        )
+
+    try:
+        queue_snapshot = (
+            get_today_queue(
+                configured_limit=(
+                    settings.daily_relist_limit
+                ),
+                minimum_age_days=(
+                    settings.minimum_relist_age_days
+                ),
+                today=target_date,
+            )
+        )
+
+        queued_today = len(
+            queue_snapshot.queued_items
+        )
+
+        completed_today = (
+            queue_snapshot.completed_count
+        )
+
+    except Exception:
+        # The normal database queries below can still provide
+        # a fallback count if queue reconciliation itself fails.
+        queue_snapshot = None
+
+        queued_today = 0
+        completed_today = 0
+
+    # =====================================================
+    # Main statistics
+    # =====================================================
 
     with session_scope() as session:
         listings = list(
             session.scalars(
-                select(Listing)
+                select(
+                    Listing
+                )
             ).all()
         )
 
@@ -106,37 +177,54 @@ def get_dashboard_statistics(
             )
         )
 
-        queued_today = int(
-            session.scalar(
-                select(
-                    func.count(
-                        DailyQueueEntry.id
-                    )
-                ).where(
-                    DailyQueueEntry.queue_date
-                    == target_date,
-                    DailyQueueEntry.status
-                    == QueueEntryStatus.QUEUED,
-                )
-            )
-            or 0
-        )
+        # -------------------------------------------------
+        # Queue fallback
+        # -------------------------------------------------
 
-        completed_today = int(
-            session.scalar(
-                select(
-                    func.count(
-                        DailyQueueEntry.id
+        if queue_snapshot is None:
+            queued_today = int(
+                session.scalar(
+                    select(
+                        func.count(
+                            DailyQueueEntry.id
+                        )
+                    ).where(
+                        (
+                            DailyQueueEntry.queue_date
+                            == target_date
+                        ),
+                        (
+                            DailyQueueEntry.status
+                            == QueueEntryStatus.QUEUED
+                        ),
                     )
-                ).where(
-                    DailyQueueEntry.queue_date
-                    == target_date,
-                    DailyQueueEntry.status
-                    == QueueEntryStatus.COMPLETED,
                 )
+                or 0
             )
-            or 0
-        )
+
+            completed_today = int(
+                session.scalar(
+                    select(
+                        func.count(
+                            DailyQueueEntry.id
+                        )
+                    ).where(
+                        (
+                            DailyQueueEntry.queue_date
+                            == target_date
+                        ),
+                        (
+                            DailyQueueEntry.status
+                            == QueueEntryStatus.COMPLETED
+                        ),
+                    )
+                )
+                or 0
+            )
+
+        # -------------------------------------------------
+        # Relisting history
+        # -------------------------------------------------
 
         relisted_this_week = int(
             session.scalar(
@@ -145,10 +233,14 @@ def get_dashboard_statistics(
                         RelistHistory.id
                     )
                 ).where(
-                    RelistHistory.relisted_date
-                    >= start_of_week,
-                    RelistHistory.relisted_date
-                    <= target_date,
+                    (
+                        RelistHistory.relisted_date
+                        >= start_of_week
+                    ),
+                    (
+                        RelistHistory.relisted_date
+                        <= target_date
+                    ),
                 )
             )
             or 0
@@ -161,14 +253,22 @@ def get_dashboard_statistics(
                         RelistHistory.id
                     )
                 ).where(
-                    RelistHistory.relisted_date
-                    >= start_of_month,
-                    RelistHistory.relisted_date
-                    <= target_date,
+                    (
+                        RelistHistory.relisted_date
+                        >= start_of_month
+                    ),
+                    (
+                        RelistHistory.relisted_date
+                        <= target_date
+                    ),
                 )
             )
             or 0
         )
+
+        # -------------------------------------------------
+        # Inventory age
+        # -------------------------------------------------
 
         older_than_30_days = sum(
             1
@@ -215,14 +315,26 @@ def get_dashboard_statistics(
             )
         )
 
+        # -------------------------------------------------
+        # Known history intervals
+        # -------------------------------------------------
+
         history_rows = list(
             session.scalars(
                 select(
                     RelistHistory
                 )
                 .order_by(
-                    RelistHistory.relisted_date.desc(),
-                    RelistHistory.recorded_at.desc(),
+                    (
+                        RelistHistory
+                        .relisted_date
+                        .desc()
+                    ),
+                    (
+                        RelistHistory
+                        .recorded_at
+                        .desc()
+                    ),
                 )
             ).all()
         )
@@ -236,8 +348,10 @@ def get_dashboard_statistics(
             if (
                 history.previous_relisted_date
                 is not None
-                and history.relisted_date
-                >= history.previous_relisted_date
+                and (
+                    history.relisted_date
+                    >= history.previous_relisted_date
+                )
             )
         ]
 
@@ -252,11 +366,19 @@ def get_dashboard_statistics(
             )
 
         else:
-            average_days_between_relists = None
+            average_days_between_relists = (
+                None
+            )
 
-        oldest_listing = _find_oldest_listing(
-            active_listings,
-            target_date,
+        # -------------------------------------------------
+        # Inventory highlights
+        # -------------------------------------------------
+
+        oldest_listing = (
+            _find_oldest_listing(
+                active_listings,
+                target_date,
+            )
         )
 
         most_relisted_listing = (
@@ -265,6 +387,10 @@ def get_dashboard_statistics(
             )
         )
 
+        # -------------------------------------------------
+        # Recent activity
+        # -------------------------------------------------
+
         recent_rows = session.execute(
             select(
                 RelistHistory,
@@ -272,15 +398,31 @@ def get_dashboard_statistics(
             )
             .join(
                 Listing,
-                Listing.id
-                == RelistHistory.listing_id,
+                (
+                    Listing.id
+                    == RelistHistory.listing_id
+                ),
             )
             .order_by(
-                RelistHistory.relisted_date.desc(),
-                RelistHistory.recorded_at.desc(),
-                RelistHistory.id.desc(),
+                (
+                    RelistHistory
+                    .relisted_date
+                    .desc()
+                ),
+                (
+                    RelistHistory
+                    .recorded_at
+                    .desc()
+                ),
+                (
+                    RelistHistory
+                    .id
+                    .desc()
+                ),
             )
-            .limit(5)
+            .limit(
+                5
+            )
         ).all()
 
         recent_relists = tuple(
@@ -291,8 +433,13 @@ def get_dashboard_statistics(
                     history.relisted_date
                 ),
             )
-            for history, listing in recent_rows
+            for history, listing
+            in recent_rows
         )
+
+        # -------------------------------------------------
+        # Oldest listing
+        # -------------------------------------------------
 
         if oldest_listing is None:
             oldest_listing_id = None
@@ -315,9 +462,19 @@ def get_dashboard_statistics(
                 )
             )
 
+        # -------------------------------------------------
+        # Most relisted listing
+        # -------------------------------------------------
+
         if most_relisted_listing is None:
-            most_relisted_listing_id = None
-            most_relisted_listing_title = None
+            most_relisted_listing_id = (
+                None
+            )
+
+            most_relisted_listing_title = (
+                None
+            )
+
             most_relisted_count = None
 
         else:
@@ -338,15 +495,21 @@ def get_dashboard_statistics(
             active_listings=len(
                 active_listings
             ),
-            queued_today=queued_today,
-            completed_today=completed_today,
+            queued_today=(
+                queued_today
+            ),
+            completed_today=(
+                completed_today
+            ),
             relisted_this_week=(
                 relisted_this_week
             ),
             relisted_this_month=(
                 relisted_this_month
             ),
-            sold_items=sold_items,
+            sold_items=(
+                sold_items
+            ),
             older_than_30_days=(
                 older_than_30_days
             ),

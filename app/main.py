@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import sys
 
+from pathlib import Path
+
+from PySide6.QtGui import (
+    QIcon,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QMessageBox,
 )
 
-from app import APP_NAME
+from app import (
+    APP_NAME,
+)
 from app.database import (
     database_health_check,
     initialize_database,
@@ -16,11 +23,11 @@ from app.services.settings_service import (
     default_settings,
     load_settings,
 )
+from app.ui.branded_main_window import (
+    BrandedMainWindow,
+)
 from app.ui.input_behavior import (
     initialize_input_behavior,
-)
-from app.ui.polished_main_window import (
-    PolishedMainWindow,
 )
 from app.ui.theme import (
     initialize_theme_manager,
@@ -31,6 +38,59 @@ MINIMUM_PYTHON_VERSION = (
     3,
     12,
 )
+
+
+def resource_path(
+    *parts: str,
+) -> Path:
+    """
+    Resolve a bundled resource in both development mode and
+    PyInstaller builds.
+    """
+    if (
+        getattr(
+            sys,
+            "frozen",
+            False,
+        )
+        and hasattr(
+            sys,
+            "_MEIPASS",
+        )
+    ):
+        base = Path(
+            sys._MEIPASS
+        )
+
+    else:
+        base = (
+            Path(
+                __file__
+            )
+            .resolve()
+            .parents[1]
+        )
+
+    return base.joinpath(
+        *parts
+    )
+
+
+def get_application_icon() -> QIcon:
+    icon_path = resource_path(
+        "app",
+        "assets",
+        "app_icon.png",
+    )
+
+    if not icon_path.exists():
+        return QIcon()
+
+    return QIcon(
+        str(
+            icon_path
+        )
+    )
 
 
 def check_python_version() -> None:
@@ -97,17 +157,22 @@ def main() -> int:
         APP_NAME
     )
 
+    qt_app.setApplicationDisplayName(
+        APP_NAME
+    )
+
     qt_app.setOrganizationName(
         "VintedRelistingAssistant"
     )
 
-    # -------------------------------------------------
-    # Global input safety.
-    #
-    # This must be installed before windows/dialogs are
-    # created so both existing and lazily-created widgets
-    # receive the same behaviour.
-    # -------------------------------------------------
+    app_icon = (
+        get_application_icon()
+    )
+
+    if not app_icon.isNull():
+        qt_app.setWindowIcon(
+            app_icon
+        )
 
     input_behavior = (
         initialize_input_behavior(
@@ -115,8 +180,8 @@ def main() -> int:
         )
     )
 
-    # Keep a strong reference for the lifetime of main().
-    # QObject is also parented to QApplication.
+    # Keep a strong reference for the lifetime
+    # of the application.
     _ = input_behavior
 
     theme_manager = (
@@ -146,8 +211,13 @@ def main() -> int:
         return 1
 
     window = (
-        PolishedMainWindow()
+        BrandedMainWindow()
     )
+
+    if not app_icon.isNull():
+        window.setWindowIcon(
+            app_icon
+        )
 
     window.show()
 

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from PySide6.QtCore import (
     Qt,
@@ -6,10 +6,8 @@ from PySide6.QtCore import (
 )
 from PySide6.QtWidgets import (
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -31,13 +29,27 @@ from app.services.queue_service import (
     DAILY_RELIST_LIMIT,
     DEFAULT_MINIMUM_RELIST_AGE_DAYS,
     DailyLimitReachedError,
+    QueueEntryNotFoundError,
     QueueItem,
     get_today_queue,
     mark_as_relisted,
     skip_today,
 )
+from app.ui.components.dialogs.message_dialog import (
+    BrandedMessageDialog,
+)
+from app.ui.components.dialogs.error_feedback import (
+    log_background_error,
+    show_logged_error,
+)
+from app.ui.components.states.empty_state import (
+    FriendlyEmptyState,
+)
 from app.ui.image_cache import (
     get_scaled_pixmap,
+)
+from app.ui.components.dialogs.success_dialog import (
+    BrandedSuccessDialog,
 )
 
 
@@ -280,7 +292,7 @@ class QueueCard(QFrame):
 
             if self.listing.subcategory:
                 category += (
-                    " › "
+                    " â€º "
                     f"{self.listing.subcategory}"
                 )
 
@@ -306,7 +318,7 @@ class QueueCard(QFrame):
                 )
             )
 
-        return "   •   ".join(
+        return "   â€¢   ".join(
             values
         )
 
@@ -334,7 +346,7 @@ class QueueCard(QFrame):
 
                 age_text = (
                     f"Last relisted {date_text}"
-                    " · "
+                    " Â· "
                     f"{self.item.days_since_relisted} "
                     "days ago"
                 )
@@ -362,7 +374,7 @@ class QueueCard(QFrame):
 
         return (
             f"{age_text}"
-            "   •   "
+            "   â€¢   "
             f"{count_text}"
         )
 
@@ -445,9 +457,17 @@ class QueueCard(QFrame):
                 pixmap
             )
 
-        except Exception:
+        except Exception as exc:
+            log_background_error(
+                context=(
+                    "Unable to load queue listing photo "
+                    f"for listing #{self.listing.id}"
+                ),
+                exception=exc,
+            )
+
             photo_label.setText(
-                "Photo Error"
+                "Photo unavailable"
             )
 
         return photo_label
@@ -683,14 +703,6 @@ class DailyQueuePage(QWidget):
             1,
         )
 
-        # Do not refresh here.
-        #
-        # MainWindow applies the user's saved daily limit
-        # and minimum age immediately after constructing the
-        # page, then performs the first refresh once.
-        #
-        # This avoids loading the queue twice.
-
     def _build_summary(
         self,
         root_layout: QVBoxLayout,
@@ -727,7 +739,7 @@ class DailyQueuePage(QWidget):
         )
 
         self.progress_label = QLabel(
-            "Completed: —"
+            "Completed: â€”"
         )
 
         self.progress_label.setObjectName(
@@ -735,7 +747,7 @@ class DailyQueuePage(QWidget):
         )
 
         self.ready_label = QLabel(
-            "Ready: —"
+            "Ready: â€”"
         )
 
         self.ready_label.setObjectName(
@@ -819,15 +831,13 @@ class DailyQueuePage(QWidget):
             summary
         )
 
+    # =====================================================
+    # Queue loading
+    # =====================================================
+
     def refresh(
         self,
     ) -> None:
-        """
-        Refresh today's queue.
-
-        Queue data is retrieved first, then all photo metadata
-        is loaded in one batch query.
-        """
         try:
             snapshot = get_today_queue(
                 configured_limit=(
@@ -839,6 +849,13 @@ class DailyQueuePage(QWidget):
             )
 
         except Exception as exc:
+            log_background_error(
+                context=(
+                    "Unable to load today's relisting queue"
+                ),
+                exception=exc,
+            )
+
             self.progress_label.setText(
                 "Completed: unavailable"
             )
@@ -848,8 +865,37 @@ class DailyQueuePage(QWidget):
             )
 
             self.message_label.setText(
-                str(exc)
+                (
+                    "Today's queue couldn't be loaded. "
+                    "Technical details were saved to the "
+                    "application log."
+                )
             )
+
+            self.container.setUpdatesEnabled(
+                False
+            )
+
+            try:
+                self._clear_cards()
+
+                self._show_error_state(
+                    title=(
+                        "Unable to load today's queue"
+                    ),
+                    message=(
+                        "Your listings have not been changed. "
+                        "Try opening the page again. If the problem "
+                        "continues, restart the app."
+                    ),
+                )
+
+            finally:
+                self.container.setUpdatesEnabled(
+                    True
+                )
+
+                self.container.update()
 
             return
 
@@ -898,10 +944,7 @@ class DailyQueuePage(QWidget):
 
         if snapshot.is_complete:
             self.message_label.setText(
-                (
-                    "Today's relisting target is complete. "
-                    "No more listings need to be prepared today."
-                )
+                "Daily target complete."
             )
 
             self.container.setUpdatesEnabled(
@@ -911,10 +954,14 @@ class DailyQueuePage(QWidget):
             try:
                 self._clear_cards()
 
-                self._show_empty_message(
-                    (
-                        "Today's queue is complete."
-                    )
+                self._show_friendly_state(
+                    title=(
+                        "Today's relisting is wrapped up"
+                    ),
+                    message=(
+                        "You reached your daily target. "
+                        "Your queue can rest until tomorrow."
+                    ),
                 )
 
             finally:
@@ -928,10 +975,7 @@ class DailyQueuePage(QWidget):
 
         if not snapshot.queued_items:
             self.message_label.setText(
-                (
-                    "There are currently no eligible "
-                    "listings for today's queue."
-                )
+                "No eligible listings right now."
             )
 
             self.container.setUpdatesEnabled(
@@ -941,11 +985,15 @@ class DailyQueuePage(QWidget):
             try:
                 self._clear_cards()
 
-                self._show_empty_message(
-                    (
-                        "No eligible listings "
-                        "are available today."
-                    )
+                self._show_friendly_state(
+                    title=(
+                        "Nothing needs relisting today"
+                    ),
+                    message=(
+                        "None of your active listings currently "
+                        f"meet the {self.minimum_age_days}-day "
+                        "relisting rule. Your shop gets a quiet day."
+                    ),
                 )
 
             finally:
@@ -969,9 +1017,15 @@ class DailyQueuePage(QWidget):
                 )
             )
 
-        except Exception:
-            # Queue actions should still work even when
-            # the optimized photo lookup fails.
+        except Exception as exc:
+            log_background_error(
+                context=(
+                    "Batch queue photo loading failed; "
+                    "falling back to individual photo loading"
+                ),
+                exception=exc,
+            )
+
             photos_by_listing = None
 
         remaining = max(
@@ -1047,29 +1101,34 @@ class DailyQueuePage(QWidget):
 
             self.container.update()
 
+    # =====================================================
+    # Queue actions
+    # =====================================================
+
     def _skip_listing(
         self,
         listing_id: int,
     ) -> None:
-        answer = QMessageBox.question(
-            self,
-            "Skip Today",
-            (
-                "Skip this listing for today?\n\n"
-                "It will not count toward your "
-                "completed daily relist limit."
-            ),
-            (
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.Cancel
-            ),
-            QMessageBox.StandardButton.Cancel,
+        confirmed = (
+            BrandedMessageDialog.ask(
+                self,
+                title="Skip This Listing Today?",
+                eyebrow="SKIP FOR TODAY",
+                message=(
+                    "This listing will be removed from today's "
+                    "queue and will not count toward your completed "
+                    "daily relist target."
+                ),
+                detail=(
+                    "You can still work with the listing normally "
+                    "from All Listings."
+                ),
+                confirm_text="SKIP TODAY",
+                cancel_text="KEEP IT",
+            )
         )
 
-        if (
-            answer
-            != QMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
         try:
@@ -1083,11 +1142,34 @@ class DailyQueuePage(QWidget):
                 ),
             )
 
-        except Exception as exc:
-            QMessageBox.critical(
+        except QueueEntryNotFoundError as exc:
+            BrandedMessageDialog.notice(
                 self,
-                "Unable to Skip",
-                str(exc),
+                title="Listing Is No Longer Queued",
+                message=str(
+                    exc
+                ),
+                detail=(
+                    "Today's queue will now refresh."
+                ),
+            )
+
+            self.refresh()
+
+            return
+
+        except Exception as exc:
+            show_logged_error(
+                self,
+                title="Unable to Skip",
+                message=(
+                    "The listing could not be skipped right now."
+                ),
+                context=(
+                    "Unable to skip queue listing "
+                    f"#{listing_id}"
+                ),
+                exception=exc,
             )
 
             return
@@ -1100,26 +1182,25 @@ class DailyQueuePage(QWidget):
         self,
         listing_id: int,
     ) -> None:
-        answer = QMessageBox.question(
-            self,
-            "Mark as Relisted",
-            (
-                "Have you successfully published this "
-                "listing on Vinted?\n\n"
-                "Only confirm this after you have manually "
-                "completed the relisting."
-            ),
-            (
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.Cancel
-            ),
-            QMessageBox.StandardButton.Cancel,
+        confirmed = (
+            BrandedMessageDialog.ask(
+                self,
+                title="Mark This Listing as Relisted?",
+                eyebrow="CONFIRM RELIST",
+                message=(
+                    "Only confirm this after you have successfully "
+                    "published the listing on Vinted yourself."
+                ),
+                detail=(
+                    "This records the relist locally, updates its "
+                    "history, and counts it toward today's target."
+                ),
+                confirm_text="YES, RELISTED",
+                cancel_text="NOT YET",
+            )
         )
 
-        if (
-            answer
-            != QMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
         try:
@@ -1134,10 +1215,32 @@ class DailyQueuePage(QWidget):
             )
 
         except DailyLimitReachedError as exc:
-            QMessageBox.warning(
+            BrandedMessageDialog.warning(
                 self,
-                "Daily Limit Reached",
-                str(exc),
+                title="Daily Target Already Reached",
+                message=str(
+                    exc
+                ),
+                detail=(
+                    "Today's queue will refresh using your "
+                    "current relisting settings."
+                ),
+            )
+
+            self.refresh()
+
+            return
+
+        except QueueEntryNotFoundError as exc:
+            BrandedMessageDialog.notice(
+                self,
+                title="Listing Is No Longer Queued",
+                message=str(
+                    exc
+                ),
+                detail=(
+                    "Today's queue will now refresh."
+                ),
             )
 
             self.refresh()
@@ -1145,59 +1248,204 @@ class DailyQueuePage(QWidget):
             return
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Unable to Mark as Relisted",
-                str(exc),
+                title="Unable to Mark as Relisted",
+                message=(
+                    "The relisting could not be recorded right now."
+                ),
+                context=(
+                    "Unable to mark queue listing "
+                    f"#{listing_id} as relisted"
+                ),
+                exception=exc,
             )
 
             return
 
-        QMessageBox.information(
-            self,
-            "Relisting Recorded",
-            (
-                "The listing has been recorded "
-                "as successfully relisted."
-            ),
+        success_title = (
+            "Relisting recorded"
         )
+
+        success_message = (
+            "Nice â€” this listing is now safely recorded "
+            "as relisted."
+        )
+
+        success_detail = (
+            "Your daily progress has been updated."
+        )
+
+        try:
+            snapshot = get_today_queue(
+                configured_limit=(
+                    self.daily_limit
+                ),
+                minimum_age_days=(
+                    self.minimum_age_days
+                ),
+            )
+
+            if snapshot.is_complete:
+                success_title = (
+                    "Today's target is complete"
+                )
+
+                success_message = (
+                    "Lovely â€” that relisting is recorded "
+                    "and you've reached today's target."
+                )
+
+                success_detail = (
+                    "Your queue can rest until tomorrow."
+                )
+
+            else:
+                remaining = (
+                    snapshot.remaining_completions
+                )
+
+                if remaining == 1:
+                    success_detail = (
+                        "1 relist left before today's target."
+                    )
+
+                else:
+                    success_detail = (
+                        f"{remaining} relists left "
+                        "before today's target."
+                    )
+
+        except Exception as exc:
+            log_background_error(
+                context=(
+                    "Unable to calculate updated queue progress "
+                    f"after relisting listing #{listing_id}"
+                ),
+                exception=exc,
+            )
 
         self.refresh()
 
         self.queue_changed.emit()
 
-    def _show_empty_message(
+        dialog = BrandedSuccessDialog(
+            title=success_title,
+            message=success_message,
+            detail=success_detail,
+            parent=self,
+        )
+
+        dialog.exec()
+
+    # =====================================================
+    # Friendly / error states
+    # =====================================================
+
+    def _show_friendly_state(
         self,
-        text: str,
+        title: str,
+        message: str,
     ) -> None:
-        label = QLabel(
-            text
-        )
-
-        label.setObjectName(
-            "queueEmptyState"
-        )
-
-        label.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
-
-        label.setWordWrap(
-            True
+        state = FriendlyEmptyState(
+            title=title,
+            message=message,
         )
 
         self.cards_layout.insertWidget(
             0,
-            label,
+            state,
         )
+
+    def _show_error_state(
+        self,
+        title: str,
+        message: str,
+    ) -> None:
+        frame = QFrame()
+
+        frame.setObjectName(
+            "errorState"
+        )
+
+        layout = QVBoxLayout(
+            frame
+        )
+
+        layout.setContentsMargins(
+            24,
+            24,
+            24,
+            24,
+        )
+
+        layout.setSpacing(
+            7
+        )
+
+        heading = QLabel(
+            title
+        )
+
+        heading.setObjectName(
+            "placeholderTitle"
+        )
+
+        heading.setWordWrap(
+            True
+        )
+
+        text = QLabel(
+            message
+        )
+
+        text.setObjectName(
+            "informationText"
+        )
+
+        text.setWordWrap(
+            True
+        )
+
+        log_note = QLabel(
+            (
+                "Technical details were saved to "
+                "the local application log."
+            )
+        )
+
+        log_note.setObjectName(
+            "informationText"
+        )
+
+        log_note.setWordWrap(
+            True
+        )
+
+        layout.addWidget(
+            heading
+        )
+
+        layout.addWidget(
+            text
+        )
+
+        layout.addWidget(
+            log_note
+        )
+
+        self.cards_layout.insertWidget(
+            0,
+            frame,
+        )
+
+    # =====================================================
+    # Cleanup
+    # =====================================================
 
     def _clear_cards(
         self,
     ) -> None:
-        """
-        Delete existing queue cards while keeping the
-        final stretch item.
-        """
         while (
             self.cards_layout.count()
             > 1
@@ -1212,3 +1460,4 @@ class DailyQueuePage(QWidget):
 
             if widget is not None:
                 widget.deleteLater()
+

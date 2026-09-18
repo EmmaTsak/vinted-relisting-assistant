@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import date
 
@@ -20,6 +20,9 @@ from app.services.history_service import (
     HistoryRecord,
     get_history_summary,
     get_relist_history,
+)
+from app.ui.components.states.empty_state import (
+    FriendlyEmptyState,
 )
 
 
@@ -167,7 +170,7 @@ class HistoryRecordRow(QFrame):
                 is not None
             ):
                 previous_text += (
-                    " · "
+                    " Â· "
                     f"{self.record.days_since_previous} "
                     "days apart"
                 )
@@ -183,7 +186,7 @@ class HistoryRecordRow(QFrame):
             )
         )
 
-        return "   •   ".join(
+        return "   â€¢   ".join(
             values
         )
 
@@ -633,26 +636,20 @@ class HistoryPage(QWidget):
             )
         )
 
+        # -------------------------------------------------
+        # Friendly first-history state
+        # -------------------------------------------------
+
         if not records:
-            empty = QLabel(
-                (
-                    "No relisting history has been recorded yet.\n\n"
-                    "When you manually publish an item on Vinted "
-                    "and confirm MARK AS RELISTED, its history "
-                    "will appear here."
-                )
-            )
-
-            empty.setObjectName(
-                "historyEmpty"
-            )
-
-            empty.setAlignment(
-                Qt.AlignmentFlag.AlignCenter
-            )
-
-            empty.setWordWrap(
-                True
+            empty = FriendlyEmptyState(
+                title=(
+                    "Your relisting story starts here"
+                ),
+                message=(
+                    "Once you manually relist an item and confirm "
+                    "MARK RELISTED, its little history trail will "
+                    "begin appearing here."
+                ),
             )
 
             self.groups_layout.insertWidget(
