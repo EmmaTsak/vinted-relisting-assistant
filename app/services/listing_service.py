@@ -404,6 +404,47 @@ def update_listing(
         )
 
 
+
+def update_listing_price(
+    listing_id: int,
+    price: Decimal,
+) -> None:
+    """
+    Update only the stored price for one listing.
+
+    Used by the manual relisting preparation workflow so a
+    new Vinted price can be recorded without rewriting the
+    rest of the listing.
+    """
+    normalized_price = Decimal(
+        str(price)
+    ).quantize(
+        Decimal("0.01")
+    )
+
+    if normalized_price <= 0:
+        raise ValueError(
+            "Listing price must be greater than zero."
+        )
+
+    with session_scope() as session:
+        listing = session.get(
+            Listing,
+            listing_id,
+        )
+
+        if listing is None:
+            raise ListingNotFoundError(
+                (
+                    "Listing with ID "
+                    f"{listing_id} does not exist."
+                )
+            )
+
+        listing.price = (
+            normalized_price
+        )
+
 def get_listing(
     listing_id: int,
 ) -> Listing:

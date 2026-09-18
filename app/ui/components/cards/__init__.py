@@ -1,6 +1,7 @@
-"""
-Reusable card components.
+from app.ui.components.cards.dashboard_moment import (
+    DashboardMoment,
+)
 
-Listing and statistics cards can be moved here later
-when their final structure is settled.
-"""
+__all__ = [
+    "DashboardMoment",
+]

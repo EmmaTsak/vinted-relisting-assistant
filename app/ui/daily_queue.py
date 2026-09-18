@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from PySide6.QtCore import (
     Qt,
@@ -292,7 +292,7 @@ class QueueCard(QFrame):
 
             if self.listing.subcategory:
                 category += (
-                    " â€º "
+                    " › "
                     f"{self.listing.subcategory}"
                 )
 
@@ -318,7 +318,7 @@ class QueueCard(QFrame):
                 )
             )
 
-        return "   â€¢   ".join(
+        return "   •   ".join(
             values
         )
 
@@ -346,7 +346,7 @@ class QueueCard(QFrame):
 
                 age_text = (
                     f"Last relisted {date_text}"
-                    " Â· "
+                    " · "
                     f"{self.item.days_since_relisted} "
                     "days ago"
                 )
@@ -374,7 +374,7 @@ class QueueCard(QFrame):
 
         return (
             f"{age_text}"
-            "   â€¢   "
+            "   •   "
             f"{count_text}"
         )
 
@@ -739,7 +739,7 @@ class DailyQueuePage(QWidget):
         )
 
         self.progress_label = QLabel(
-            "Completed: â€”"
+            "Completed: —"
         )
 
         self.progress_label.setObjectName(
@@ -747,7 +747,7 @@ class DailyQueuePage(QWidget):
         )
 
         self.ready_label = QLabel(
-            "Ready: â€”"
+            "Ready: —"
         )
 
         self.ready_label.setObjectName(
@@ -1268,7 +1268,7 @@ class DailyQueuePage(QWidget):
         )
 
         success_message = (
-            "Nice â€” this listing is now safely recorded "
+            "Nice — this listing is now safely recorded "
             "as relisted."
         )
 
@@ -1292,7 +1292,7 @@ class DailyQueuePage(QWidget):
                 )
 
                 success_message = (
-                    "Lovely â€” that relisting is recorded "
+                    "Lovely — that relisting is recorded "
                     "and you've reached today's target."
                 )
 

@@ -15,6 +15,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QDialog,
+    QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
 from app.services.listing_service import (
     ListingNotFoundError,
     get_listing,
+    update_listing_price,
 )
 from app.services.photo_service import (
     get_listing_photos,
@@ -44,6 +46,16 @@ from app.services.queue_service import (
     QueueEntryNotFoundError,
     mark_as_relisted,
 )
+from app.ui.components.dialogs.error_feedback import (
+    log_background_error,
+    show_logged_error,
+)
+from app.ui.components.dialogs.message_dialog import (
+    BrandedMessageDialog,
+)
+from app.ui.components.dialogs.success_dialog import (
+    BrandedSuccessDialog,
+)
 from app.utils.clipboard import (
     copy_text,
 )
@@ -54,6 +66,10 @@ from app.utils.paths import (
 
 DEFAULT_VINTED_URL = "https://www.vinted.gr/"
 
+
+from app.ui.dialog_geometry import (
+    fit_dialog_to_screen,
+)
 
 class RelistingPreparationDialog(QDialog):
     """
@@ -144,9 +160,22 @@ class RelistingPreparationDialog(QDialog):
 
         self._build_ui()
 
+        self._install_price_editor_panel()
+
+
         self._load_photo_gallery()
 
         self._apply_styles()
+
+        fit_dialog_to_screen(
+            self,
+            preferred_width=1100,
+            preferred_height=720,
+            minimum_width=760,
+            minimum_height=500,
+            width_ratio=0.92,
+            height_ratio=0.84,
+        )
 
     # =====================================================
     # Main UI
@@ -205,6 +234,8 @@ class RelistingPreparationDialog(QDialog):
             self._create_footer()
         )
 
+
+
     def _create_header(
         self,
     ) -> QHBoxLayout:
@@ -230,8 +261,8 @@ class RelistingPreparationDialog(QDialog):
 
         subtitle = QLabel(
             (
-                "Everything here is preparation only. "
-                "You manually publish the item on Vinted."
+                "Prepare the listing here, then publish "
+                "it manually on Vinted."
             )
         )
 
@@ -256,30 +287,11 @@ class RelistingPreparationDialog(QDialog):
             1,
         )
 
-        price = Decimal(
-            str(
-                self.listing.price
-            )
-        )
-
-        price_label = QLabel(
-            (
-                f"{price:.2f} "
-                f"{self.listing.currency}"
-            )
-        )
-
-        price_label.setObjectName(
-            "headerPrice"
-        )
-
-        row.addWidget(
-            price_label,
-            0,
-            Qt.AlignmentFlag.AlignTop,
-        )
-
         return row
+
+
+
+
 
     # =====================================================
     # Workflow
@@ -707,14 +719,6 @@ class RelistingPreparationDialog(QDialog):
             multiline=True,
         )
 
-        self._add_detail_field(
-            layout,
-            "PRICE",
-            (
-                f"{price:.2f} "
-                f"{listing.currency}"
-            ),
-        )
 
         # -------------------------------------------------
         # Optional details - collapsed initially
@@ -1392,24 +1396,46 @@ class RelistingPreparationDialog(QDialog):
     def _open_photo_folder(
         self,
     ) -> None:
-        folder = (
-            get_listing_photos_directory(
-                self.listing_id
-            )
-        )
-
-        folder.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-        QDesktopServices.openUrl(
-            QUrl.fromLocalFile(
-                str(
-                    folder.resolve()
+        try:
+            folder = (
+                get_listing_photos_directory(
+                    self.listing_id
                 )
             )
-        )
+
+            folder.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            opened = (
+                QDesktopServices.openUrl(
+                    QUrl.fromLocalFile(
+                        str(
+                            folder.resolve()
+                        )
+                    )
+                )
+            )
+
+            if not opened:
+                raise RuntimeError(
+                    "Windows could not open the photo folder."
+                )
+
+        except Exception as exc:
+            show_logged_error(
+                self,
+                title="Unable to Open Photo Folder",
+                message=(
+                    "The photo folder could not be opened."
+                ),
+                context=(
+                    "Unable to open photo folder for "
+                    f"listing #{self.listing_id}"
+                ),
+                exception=exc,
+            )
 
     # =====================================================
     # Copying
@@ -1425,10 +1451,17 @@ class RelistingPreparationDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.warning(
+            show_logged_error(
                 self,
-                "Clipboard Error",
-                str(exc),
+                title="Unable to Copy",
+                message=(
+                    "The text could not be copied right now."
+                ),
+                context=(
+                    "Clipboard copy failed inside "
+                    "Relisting Preparation"
+                ),
+                exception=exc,
             )
 
             return
@@ -1436,7 +1469,7 @@ class RelistingPreparationDialog(QDialog):
         self.setWindowTitle(
             (
                 "Prepare Listing for "
-                "Relisting — Copied"
+                "Relisting â€” Copied"
             )
         )
 
@@ -1552,25 +1585,24 @@ class RelistingPreparationDialog(QDialog):
     def _mark_as_relisted(
         self,
     ) -> None:
-        answer = QMessageBox.question(
-            self,
-            "Mark as Relisted",
-            (
-                "Have you successfully published this "
-                "listing on Vinted?\n\n"
-                "Only choose Yes after the listing has "
-                "been manually published."
-            ),
-            (
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.Cancel
-            ),
-            QMessageBox.StandardButton.Cancel,
+        confirmed = (
+            BrandedMessageDialog.ask(
+                self,
+                title="Mark as Relisted?",
+                message=(
+                    "Only confirm after you've published "
+                    "this listing on Vinted."
+                ),
+                confirm_text="YES, RELISTED",
+                cancel_text="NOT YET",
+            )
         )
 
-        if (
-            answer
-            != QMessageBox.StandardButton.Yes
+        if not confirmed:
+            return
+
+        if not self._save_prepared_price(
+            show_feedback=False,
         ):
             return
 
@@ -1585,41 +1617,119 @@ class RelistingPreparationDialog(QDialog):
                 ),
             )
 
-        except DailyLimitReachedError as exc:
-            QMessageBox.warning(
+        except DailyLimitReachedError:
+            BrandedMessageDialog.warning(
                 self,
-                "Daily Limit Reached",
-                str(exc),
+                title="Daily Target Reached",
+                message=(
+                    "You've already reached today's "
+                    "relisting target."
+                ),
             )
 
             return
 
-        except QueueEntryNotFoundError as exc:
-            QMessageBox.warning(
+        except QueueEntryNotFoundError:
+            BrandedMessageDialog.notice(
                 self,
-                "Queue Entry Not Found",
-                str(exc),
+                title="Listing No Longer Queued",
+                message=(
+                    "This listing is no longer in "
+                    "today's queue."
+                ),
             )
 
             return
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Unable to Record Relisting",
-                str(exc),
+                title="Unable to Record Relisting",
+                message=(
+                    "The relisting could not be recorded."
+                ),
+                context=(
+                    "Unable to record relisting from "
+                    "Relisting Preparation for "
+                    f"listing #{self.listing_id}"
+                ),
+                exception=exc,
             )
 
             return
 
-        QMessageBox.information(
-            self,
-            "Relisting Recorded",
-            (
-                "The listing was successfully "
-                "recorded as relisted."
-            ),
+        # -------------------------------------------------
+        # Build success feedback
+        # -------------------------------------------------
+
+        success_title = (
+            "Relisting recorded"
         )
+
+        success_message = (
+            "Nice â€” this listing is now recorded as relisted."
+        )
+
+        success_detail = (
+            "Your daily progress has been updated."
+        )
+
+        try:
+            snapshot = get_today_queue(
+                configured_limit=(
+                    self.configured_limit
+                ),
+                minimum_age_days=(
+                    self.minimum_age_days
+                ),
+            )
+
+            if snapshot.is_complete:
+                success_title = (
+                    "Today's target is complete"
+                )
+
+                success_message = (
+                    "You've reached today's relisting target."
+                )
+
+                success_detail = (
+                    "Your queue is finished for today."
+                )
+
+            else:
+                remaining = (
+                    snapshot.remaining_completions
+                )
+
+                if remaining == 1:
+                    success_detail = (
+                        "1 relist left today."
+                    )
+
+                else:
+                    success_detail = (
+                        f"{remaining} relists left today."
+                    )
+
+        except Exception as exc:
+            log_background_error(
+                context=(
+                    "Unable to calculate queue progress after "
+                    "Relisting Preparation successfully recorded "
+                    f"listing #{self.listing_id}"
+                ),
+                exception=exc,
+            )
+
+        dialog = BrandedSuccessDialog(
+            title=success_title,
+            message=success_message,
+            detail=success_detail,
+            parent=self,
+        )
+
+        dialog.exec()
 
         self.relisted.emit(
             self.listing_id
@@ -1634,3 +1744,271 @@ class RelistingPreparationDialog(QDialog):
         ThemeManager controls Light/Dark appearance globally.
         """
         return
+
+
+    def _install_price_editor_panel(
+        self,
+    ) -> None:
+        if self.listing is None:
+            return
+
+        root_layout = self.layout()
+
+        if not isinstance(
+            root_layout,
+            QVBoxLayout,
+        ):
+            return
+
+        panel = QFrame()
+
+        panel.setObjectName(
+            "informationBox"
+        )
+
+        panel_layout = QHBoxLayout(
+            panel
+        )
+
+        panel_layout.setContentsMargins(
+            16,
+            10,
+            16,
+            10,
+        )
+
+        panel_layout.setSpacing(
+            12
+        )
+
+        title = QLabel(
+            "RELIST PRICE"
+        )
+
+        title.setObjectName(
+            "sectionHeading"
+        )
+
+        panel_layout.addWidget(
+            title
+        )
+
+        self.prepared_price_input = (
+            QDoubleSpinBox()
+        )
+
+        self.prepared_price_input.setDecimals(
+            2
+        )
+
+        self.prepared_price_input.setRange(
+            0.01,
+            999999.99,
+        )
+
+        self.prepared_price_input.setSingleStep(
+            0.50
+        )
+
+        self.prepared_price_input.setMinimumHeight(
+            40
+        )
+
+        self.prepared_price_input.setMinimumWidth(
+            180
+        )
+
+        self.prepared_price_input.setValue(
+            float(
+                Decimal(
+                    str(
+                        self.listing.price
+                    )
+                )
+            )
+        )
+
+        self.prepared_price_input.setSuffix(
+            f" {self.listing.currency}"
+        )
+
+        panel_layout.addWidget(
+            self.prepared_price_input
+        )
+
+        copy_button = QPushButton(
+            "COPY PRICE"
+        )
+
+        copy_button.setObjectName(
+            "secondaryButton"
+        )
+
+        copy_button.setMinimumHeight(
+            40
+        )
+
+        copy_button.clicked.connect(
+            self._copy_prepared_price
+        )
+
+        panel_layout.addWidget(
+            copy_button
+        )
+
+        save_button = QPushButton(
+            "SAVE PRICE"
+        )
+
+        save_button.setObjectName(
+            "secondaryButton"
+        )
+
+        save_button.setMinimumHeight(
+            40
+        )
+
+        save_button.clicked.connect(
+            self._save_prepared_price
+        )
+
+        panel_layout.addWidget(
+            save_button
+        )
+
+        self.prepared_price_status = QLabel(
+            (
+                "Current saved price: "
+                f"{Decimal(str(self.listing.price)):.2f} "
+                f"{self.listing.currency}"
+            )
+        )
+
+        self.prepared_price_status.setObjectName(
+            "informationText"
+        )
+
+        panel_layout.addWidget(
+            self.prepared_price_status
+        )
+
+        panel_layout.addStretch()
+
+        # Header = 0
+        # Workflow = 1
+        # Price editor = 2
+        root_layout.insertWidget(
+            2,
+            panel,
+        )
+
+    def _prepared_price(
+        self,
+    ) -> Decimal:
+        return Decimal(
+            str(
+                self.prepared_price_input.value()
+            )
+        ).quantize(
+            Decimal("0.01")
+        )
+
+    def _copy_prepared_price(
+        self,
+        checked: bool = False,
+    ) -> None:
+        _ = checked
+
+        self._copy_value(
+            f"{self._prepared_price():.2f}"
+        )
+
+    def _save_prepared_price(
+        self,
+        checked: bool = False,
+        *,
+        show_feedback: bool = True,
+    ) -> bool:
+        _ = checked
+
+        if self.listing is None:
+            return False
+
+        new_price = (
+            self._prepared_price()
+        )
+
+        old_price = Decimal(
+            str(
+                self.listing.price
+            )
+        ).quantize(
+            Decimal("0.01")
+        )
+
+        if new_price == old_price:
+            self.prepared_price_status.setText(
+                (
+                    "Current saved price: "
+                    f"{new_price:.2f} "
+                    f"{self.listing.currency}"
+                )
+            )
+
+            return True
+
+        try:
+            update_listing_price(
+                self.listing_id,
+                new_price,
+            )
+
+        except Exception as exc:
+            show_logged_error(
+                self,
+                title="Unable to Update Price",
+                message=(
+                    "The relist price could not be saved."
+                ),
+                context=(
+                    "Unable to save relist price for "
+                    f"listing #{self.listing_id}"
+                ),
+                exception=exc,
+            )
+
+            return False
+
+        old_display = (
+            f"{old_price:.2f} "
+            f"{self.listing.currency}"
+        )
+
+        new_display = (
+            f"{new_price:.2f} "
+            f"{self.listing.currency}"
+        )
+
+        self.listing.price = (
+            new_price
+        )
+
+        self.prepared_price_status.setText(
+            f"Saved price: {new_display}"
+        )
+
+        if show_feedback:
+            BrandedMessageDialog.notice(
+                self,
+                title="Price Updated",
+                message=(
+                    f"Price changed from "
+                    f"{old_display} to {new_display}."
+                ),
+            )
+
+        return True
+
+
+
+

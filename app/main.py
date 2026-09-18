@@ -23,11 +23,11 @@ from app.services.settings_service import (
     default_settings,
     load_settings,
 )
-from app.ui.branded_main_window import (
-    BrandedMainWindow,
-)
 from app.ui.input_behavior import (
     initialize_input_behavior,
+)
+from app.ui.main_window import (
+    MainWindow,
 )
 from app.ui.theme import (
     initialize_theme_manager,
@@ -211,7 +211,7 @@ def main() -> int:
         return 1
 
     window = (
-        BrandedMainWindow()
+        MainWindow()
     )
 
     if not app_icon.isNull():

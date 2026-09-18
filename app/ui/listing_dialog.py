@@ -62,6 +62,22 @@ from app.services.photo_service import (
 )
 
 
+from app.services.listing_service import (
+    InvalidISBNError,
+    normalize_isbn,
+)
+
+from app.ui.components.dialogs.error_feedback import (
+    show_logged_error,
+)
+from app.ui.components.dialogs.message_dialog import (
+    BrandedMessageDialog,
+)
+
+from app.ui.dialog_geometry import (
+    fit_dialog_to_screen,
+)
+
 class PhotoListWidget(QListWidget):
     """
     Thumbnail list supporting files dragged in from Windows Explorer.
@@ -275,7 +291,17 @@ class ListingDialog(QDialog):
             self._load_listing()
             self._refresh_photos()
 
-    def _build_ui(
+        fit_dialog_to_screen(
+            self,
+            preferred_width=1000,
+            preferred_height=720,
+            minimum_width=680,
+            minimum_height=500,
+            width_ratio=0.90,
+            height_ratio=0.84,
+        )
+
+    def _listing_base_build_ui(
         self,
     ) -> None:
         main_layout = QVBoxLayout(
@@ -827,21 +853,11 @@ class ListingDialog(QDialog):
         self,
         paths: list[str],
     ) -> None:
-        """
-        Add new photos.
-
-        Unsaved listings keep references temporarily.
-        Once the listing is saved, the files are copied into
-        application-owned storage.
-        """
         if not paths:
             return
 
-        valid_paths: list[
-            Path
-        ] = []
-
-        errors: list[str] = []
+        valid_paths: list[Path] = []
+        skipped_count = 0
 
         for value in paths:
             try:
@@ -857,10 +873,8 @@ class ListingDialog(QDialog):
                         path
                     )
 
-            except Exception as exc:
-                errors.append(
-                    str(exc)
-                )
+            except Exception:
+                skipped_count += 1
 
         if self.listing_id is None:
             self.pending_photos.extend(
@@ -879,19 +893,32 @@ class ListingDialog(QDialog):
                 self._refresh_photos()
 
             except Exception as exc:
-                QMessageBox.critical(
+                show_logged_error(
                     self,
-                    "Photo Import Failed",
-                    str(exc),
+                    title="Unable to Import Photos",
+                    message="The photos could not be imported.",
+                    context=(
+                        "Photo import failed for listing "
+                        f"#{self.listing_id}"
+                    ),
+                    exception=exc,
                 )
 
-        if errors:
-            QMessageBox.warning(
+        if skipped_count:
+            if skipped_count == 1:
+                message = (
+                    "1 photo was not a supported image."
+                )
+
+            else:
+                message = (
+                    f"{skipped_count} photos were not supported images."
+                )
+
+            BrandedMessageDialog.notice(
                 self,
-                "Some Photos Were Skipped",
-                "\n\n".join(
-                    errors
-                ),
+                title="Some Photos Were Skipped",
+                message=message,
             )
 
     def _refresh_photos(
@@ -996,10 +1023,10 @@ class ListingDialog(QDialog):
         )
 
         if item is None:
-            QMessageBox.information(
+            BrandedMessageDialog.notice(
                 self,
-                "Select a Photo",
-                "Please select a photo first.",
+                title="Select a Photo",
+                message="Choose a photo first.",
             )
 
             return None
@@ -1011,15 +1038,14 @@ class ListingDialog(QDialog):
     def _preview_selected_photo(
         self,
     ) -> None:
-        data = self._selected_photo_data()
+        data = (
+            self._selected_photo_data()
+        )
 
         if data is None:
             return
 
-        if (
-            data["kind"]
-            == "pending"
-        ):
+        if data["kind"] == "pending":
             path = Path(
                 data["path"]
             )
@@ -1037,13 +1063,10 @@ class ListingDialog(QDialog):
             )
 
         if not path.exists():
-            QMessageBox.warning(
+            BrandedMessageDialog.warning(
                 self,
-                "Missing Photo",
-                (
-                    "This image file could "
-                    "not be found."
-                ),
+                title="Photo Missing",
+                message="This photo file could not be found.",
             )
 
             return
@@ -1058,18 +1081,15 @@ class ListingDialog(QDialog):
     def _set_selected_cover(
         self,
     ) -> None:
-        data = self._selected_photo_data()
+        data = (
+            self._selected_photo_data()
+        )
 
         if data is None:
             return
 
-        if (
-            data["kind"]
-            == "pending"
-        ):
-            index = data[
-                "index"
-            ]
+        if data["kind"] == "pending":
+            index = data["index"]
 
             if index != 0:
                 photo = self.pending_photos.pop(
@@ -1093,28 +1113,30 @@ class ListingDialog(QDialog):
             self._refresh_photos()
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Photo Error",
-                str(exc),
+                title="Unable to Set Cover",
+                message="The cover photo could not be changed.",
+                context=(
+                    "Unable to set cover photo for listing "
+                    f"#{self.listing_id}"
+                ),
+                exception=exc,
             )
 
     def _move_selected_photo(
         self,
         direction: int,
     ) -> None:
-        data = self._selected_photo_data()
+        data = (
+            self._selected_photo_data()
+        )
 
         if data is None:
             return
 
-        if (
-            data["kind"]
-            == "pending"
-        ):
-            index = data[
-                "index"
-            ]
+        if data["kind"] == "pending":
+            index = data["index"]
 
             target = (
                 index
@@ -1160,48 +1182,41 @@ class ListingDialog(QDialog):
             self._refresh_photos()
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Photo Error",
-                str(exc),
+                title="Unable to Move Photo",
+                message="The photo order could not be changed.",
+                context=(
+                    "Unable to move photo for listing "
+                    f"#{self.listing_id}"
+                ),
+                exception=exc,
             )
 
     def _remove_selected_photo(
         self,
     ) -> None:
-        data = self._selected_photo_data()
+        data = (
+            self._selected_photo_data()
+        )
 
         if data is None:
             return
 
-        confirmation = (
-            QMessageBox.question(
+        confirmed = (
+            BrandedMessageDialog.ask(
                 self,
-                "Remove Photo",
-                (
-                    "Remove this photo from "
-                    "the listing?\n\n"
-                    "This only affects the "
-                    "assistant's stored copy."
-                ),
-                (
-                    QMessageBox.StandardButton.Yes
-                    | QMessageBox.StandardButton.Cancel
-                ),
-                QMessageBox.StandardButton.Cancel,
+                title="Remove Photo?",
+                message="Remove this photo from the assistant?",
+                confirm_text="REMOVE",
+                cancel_text="KEEP IT",
             )
         )
 
-        if (
-            confirmation
-            != QMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
-        if (
-            data["kind"]
-            == "pending"
-        ):
+        if data["kind"] == "pending":
             self.pending_photos.pop(
                 data["index"]
             )
@@ -1218,32 +1233,33 @@ class ListingDialog(QDialog):
             self._refresh_photos()
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Photo Error",
-                str(exc),
+                title="Unable to Remove Photo",
+                message="The photo could not be removed.",
+                context=(
+                    "Unable to remove photo for listing "
+                    f"#{self.listing_id}"
+                ),
+                exception=exc,
             )
 
     def _rotate_selected_photo(
         self,
         degrees: int,
     ) -> None:
-        data = self._selected_photo_data()
+        data = (
+            self._selected_photo_data()
+        )
 
         if data is None:
             return
 
-        if (
-            data["kind"]
-            == "pending"
-        ):
-            QMessageBox.information(
+        if data["kind"] == "pending":
+            BrandedMessageDialog.notice(
                 self,
-                "Save Listing First",
-                (
-                    "Save the listing first, then "
-                    "you can rotate its stored photos."
-                ),
+                title="Save Listing First",
+                message="Save the listing before rotating its photos.",
             )
 
             return
@@ -1257,16 +1273,23 @@ class ListingDialog(QDialog):
             self._refresh_photos()
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Photo Error",
-                str(exc),
+                title="Unable to Rotate Photo",
+                message="The photo could not be rotated.",
+                context=(
+                    "Unable to rotate photo for listing "
+                    f"#{self.listing_id}"
+                ),
+                exception=exc,
             )
 
     def _replace_selected_photo(
         self,
     ) -> None:
-        data = self._selected_photo_data()
+        data = (
+            self._selected_photo_data()
+        )
 
         if data is None:
             return
@@ -1276,20 +1299,14 @@ class ListingDialog(QDialog):
                 self,
                 "Choose Replacement Photo",
                 "",
-                (
-                    "Images "
-                    "(*.jpg *.jpeg *.png *.webp *.bmp)"
-                ),
+                "Images (*.jpg *.jpeg *.png *.webp *.bmp)",
             )
         )
 
         if not file_path:
             return
 
-        if (
-            data["kind"]
-            == "pending"
-        ):
+        if data["kind"] == "pending":
             try:
                 replacement = (
                     validate_image_file(
@@ -1297,11 +1314,11 @@ class ListingDialog(QDialog):
                     )
                 )
 
-            except Exception as exc:
-                QMessageBox.warning(
+            except Exception:
+                BrandedMessageDialog.warning(
                     self,
-                    "Invalid Photo",
-                    str(exc),
+                    title="Invalid Photo",
+                    message="Choose a supported image file.",
                 )
 
                 return
@@ -1323,10 +1340,15 @@ class ListingDialog(QDialog):
             self._refresh_photos()
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Photo Error",
-                str(exc),
+                title="Unable to Replace Photo",
+                message="The photo could not be replaced.",
+                context=(
+                    "Unable to replace photo for listing "
+                    f"#{self.listing_id}"
+                ),
+                exception=exc,
             )
 
     def _get_photo_by_id(
@@ -1346,7 +1368,7 @@ class ListingDialog(QDialog):
 
         return None
 
-    def _load_listing(
+    def _listing_base_load_listing(
         self,
     ) -> None:
         """
@@ -1452,7 +1474,7 @@ class ListingDialog(QDialog):
             listing.notes or ""
         )
 
-    def _validate_form(
+    def _listing_base_validate_form(
         self,
     ) -> bool:
         if not (
@@ -1506,7 +1528,7 @@ class ListingDialog(QDialog):
 
         return True
 
-    def _build_listing_input(
+    def _listing_base_build_listing_input(
         self,
     ) -> ListingInput:
         return ListingInput(
@@ -1610,14 +1632,14 @@ class ListingDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Save Failed",
-                (
-                    "The listing could not be saved "
-                    "completely.\n\n"
-                    f"{exc}"
+                title="Unable to Save",
+                message="The listing could not be saved.",
+                context=(
+                    "Unable to save listing from Add/Edit editor"
                 ),
+                exception=exc,
             )
 
             self.save_button.setEnabled(
@@ -1733,3 +1755,771 @@ class ListingDialog(QDialog):
             }
             """
         )
+
+    FIELD_HEIGHT = 40
+
+    def _build_ui(
+        self,
+    ) -> None:
+        """
+        Build the normal listing editor first, then apply
+        ISBN support and the cleaner collapsible layout.
+        """
+        self._listing_base_build_ui()
+
+        # -------------------------------------------------
+        # ISBN
+        # -------------------------------------------------
+
+        self.isbn_input = QLineEdit()
+
+        self.isbn_input.setMaxLength(
+            20
+        )
+
+        self.isbn_input.setPlaceholderText(
+            "ISBN-10 or ISBN-13, e.g. 9780141187761"
+        )
+
+        self.isbn_input.setClearButtonEnabled(
+            True
+        )
+
+        self.isbn_input.setMinimumHeight(
+            self.FIELD_HEIGHT
+        )
+
+        form_layout = (
+            self._find_listing_form()
+        )
+
+        notes_row = (
+            self._find_widget_row(
+                form_layout,
+                self.notes_input,
+            )
+        )
+
+        if notes_row is None:
+            form_layout.addRow(
+                "ISBN (Books)",
+                self.isbn_input,
+            )
+
+        else:
+            form_layout.insertRow(
+                notes_row,
+                "ISBN (Books)",
+                self.isbn_input,
+            )
+
+        # -------------------------------------------------
+        # Consistent field sizing
+        # -------------------------------------------------
+
+        self._polish_fields()
+
+        # -------------------------------------------------
+        # Standard section headings
+        # -------------------------------------------------
+
+        self._insert_section_before(
+            form_layout=form_layout,
+            target_widget=self.notes_input,
+            title="PRIVATE NOTES",
+            description=(
+                "Notes are stored locally and are not part "
+                "of the public Vinted listing."
+            ),
+        )
+
+        self._insert_section_before(
+            form_layout=form_layout,
+            target_widget=self.priority_input,
+            title="RELISTING",
+            description=(
+                "Controls used by the local relisting queue."
+            ),
+        )
+
+        self._insert_section_before(
+            form_layout=form_layout,
+            target_widget=self.title_input,
+            title="BASIC INFORMATION",
+            description=(
+                "Core information for this listing."
+            ),
+        )
+
+        # -------------------------------------------------
+        # Collapsible Item Details
+        # -------------------------------------------------
+
+        self._create_item_details_section(
+            form_layout
+        )
+
+        # -------------------------------------------------
+        # Collapsible Photos
+        # -------------------------------------------------
+
+        self._create_photos_section()
+
+    def _polish_fields(
+        self,
+    ) -> None:
+        """
+        Standardize ordinary input heights.
+
+        Description and notes remain larger because they
+        contain multi-line text.
+        """
+        single_line_fields = (
+            self.title_input,
+            self.price_input,
+            self.currency_input,
+            self.category_input,
+            self.subcategory_input,
+            self.brand_input,
+            self.size_input,
+            self.condition_input,
+            self.colour_input,
+            self.material_input,
+            self.parcel_size_input,
+            self.priority_input,
+            self.original_date_input,
+            self.isbn_input,
+        )
+
+        for widget in single_line_fields:
+            widget.setMinimumHeight(
+                self.FIELD_HEIGHT
+            )
+
+        self.description_input.setMinimumHeight(
+            130
+        )
+
+        self.notes_input.setMinimumHeight(
+            100
+        )
+
+        self.save_button.setMinimumHeight(
+            42
+        )
+
+    def _create_photos_section(
+        self,
+    ) -> None:
+        """
+        Place a collapsible heading directly above the
+        existing photo manager.
+
+        The photo manager itself remains unchanged.
+        """
+        photo_frame = self.findChild(
+            QFrame,
+            "photoSection",
+        )
+
+        if photo_frame is None:
+            return
+
+        parent = photo_frame.parentWidget()
+
+        if parent is None:
+            return
+
+        parent_layout = parent.layout()
+
+        if not isinstance(
+            parent_layout,
+            QVBoxLayout,
+        ):
+            return
+
+        photo_index = (
+            parent_layout.indexOf(
+                photo_frame
+            )
+        )
+
+        if photo_index < 0:
+            return
+
+        # The toggle itself becomes the visible Photos heading.
+        # Hide the old heading inside the photo frame to avoid
+        # showing "Photos" twice when expanded.
+        for label in photo_frame.findChildren(
+            QLabel
+        ):
+            if (
+                label.text()
+                .strip()
+                .lower()
+                == "photos"
+            ):
+                label.hide()
+                break
+
+        self.photos_toggle = QPushButton(
+            "PHOTOS ▾"
+        )
+
+        self.photos_toggle.setObjectName(
+            "secondaryButton"
+        )
+
+        self.photos_toggle.setCheckable(
+            True
+        )
+
+        self.photos_toggle.setChecked(
+            False
+        )
+
+        self.photos_toggle.setMinimumHeight(
+            42
+        )
+
+        self.photos_toggle.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        self.photos_toggle.setToolTip(
+            "Show or hide listing photos"
+        )
+
+        self.photos_toggle.toggled.connect(
+            self._toggle_photos
+        )
+
+        parent_layout.insertWidget(
+            photo_index,
+            self.photos_toggle,
+        )
+
+        # Start closed.
+        photo_frame.setVisible(
+            False
+        )
+
+    def _toggle_photos(
+        self,
+        expanded: bool,
+    ) -> None:
+        photo_frame = self.findChild(
+            QFrame,
+            "photoSection",
+        )
+
+        if photo_frame is None:
+            return
+
+        photo_frame.setVisible(
+            expanded
+        )
+
+        if expanded:
+            self.photos_toggle.setText(
+                "PHOTOS ▴"
+            )
+        else:
+            self.photos_toggle.setText(
+                "PHOTOS ▾"
+            )
+
+    def _create_item_details_section(
+        self,
+        form_layout: QFormLayout,
+    ) -> None:
+        """
+        Create a collapsible Item Details group.
+
+        Fields:
+        - Category
+        - Subcategory
+        - Brand
+        - Size
+        - Condition
+        - Colour
+        - Material
+        - Parcel Size
+        - ISBN
+        """
+        category_row = (
+            self._find_widget_row(
+                form_layout,
+                self.category_input,
+            )
+        )
+
+        if category_row is None:
+            return
+
+        self.item_details_toggle = (
+            QPushButton(
+                "ITEM DETAILS ▾"
+            )
+        )
+
+        self.item_details_toggle.setObjectName(
+            "secondaryButton"
+        )
+
+        self.item_details_toggle.setCheckable(
+            True
+        )
+
+        self.item_details_toggle.setChecked(
+            False
+        )
+
+        self.item_details_toggle.setMinimumHeight(
+            42
+        )
+
+        self.item_details_toggle.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        self.item_details_toggle.setToolTip(
+            (
+                "Show or hide category, brand, size, "
+                "condition and other optional details"
+            )
+        )
+
+        self.item_details_toggle.toggled.connect(
+            lambda expanded:
+            self._toggle_item_details(
+                form_layout,
+                expanded,
+            )
+        )
+
+        form_layout.insertRow(
+            category_row,
+            self.item_details_toggle,
+        )
+
+        # Start collapsed.
+        self._set_item_detail_rows_visible(
+            form_layout,
+            False,
+        )
+
+    def _toggle_item_details(
+        self,
+        form_layout: QFormLayout,
+        expanded: bool,
+    ) -> None:
+        self._set_item_detail_rows_visible(
+            form_layout,
+            expanded,
+        )
+
+        if expanded:
+            self.item_details_toggle.setText(
+                "ITEM DETAILS ▴"
+            )
+        else:
+            self.item_details_toggle.setText(
+                "ITEM DETAILS ▾"
+            )
+
+    def _set_item_detail_rows_visible(
+        self,
+        form_layout: QFormLayout,
+        visible: bool,
+    ) -> None:
+        item_detail_widgets = (
+            self.category_input,
+            self.subcategory_input,
+            self.brand_input,
+            self.size_input,
+            self.condition_input,
+            self.colour_input,
+            self.material_input,
+            self.parcel_size_input,
+            self.isbn_input,
+        )
+
+        for widget in item_detail_widgets:
+            self._set_form_row_visible(
+                form_layout,
+                widget,
+                visible,
+            )
+
+    def _set_form_row_visible(
+        self,
+        form_layout: QFormLayout,
+        target_widget: QWidget,
+        visible: bool,
+    ) -> None:
+        """
+        Hide/show both the field and its matching label.
+        """
+        row = self._find_widget_row(
+            form_layout,
+            target_widget,
+        )
+
+        if row is None:
+            return
+
+        label_item = form_layout.itemAt(
+            row,
+            QFormLayout.ItemRole.LabelRole,
+        )
+
+        field_item = form_layout.itemAt(
+            row,
+            QFormLayout.ItemRole.FieldRole,
+        )
+
+        if label_item is not None:
+            label_widget = (
+                label_item.widget()
+            )
+
+            if label_widget is not None:
+                label_widget.setVisible(
+                    visible
+                )
+
+        if field_item is not None:
+            field_widget = (
+                field_item.widget()
+            )
+
+            if field_widget is not None:
+                field_widget.setVisible(
+                    visible
+                )
+
+    def _insert_section_before(
+        self,
+        form_layout: QFormLayout,
+        target_widget: QWidget,
+        title: str,
+        description: str,
+    ) -> None:
+        row = self._find_widget_row(
+            form_layout,
+            target_widget,
+        )
+
+        if row is None:
+            return
+
+        section = QFrame()
+
+        section.setObjectName(
+            "listingFormSection"
+        )
+
+        section_layout = QVBoxLayout(
+            section
+        )
+
+        section_layout.setContentsMargins(
+            0,
+            16,
+            0,
+            6,
+        )
+
+        section_layout.setSpacing(
+            3
+        )
+
+        heading = QLabel(
+            title
+        )
+
+        heading.setObjectName(
+            "sectionHeading"
+        )
+
+        help_text = QLabel(
+            description
+        )
+
+        help_text.setObjectName(
+            "helpText"
+        )
+
+        help_text.setWordWrap(
+            True
+        )
+
+        section_layout.addWidget(
+            heading
+        )
+
+        section_layout.addWidget(
+            help_text
+        )
+
+        form_layout.insertRow(
+            row,
+            section,
+        )
+
+    def _find_widget_row(
+        self,
+        form_layout: QFormLayout,
+        target_widget: QWidget,
+    ) -> int | None:
+        for row in range(
+            form_layout.rowCount()
+        ):
+            field_item = form_layout.itemAt(
+                row,
+                QFormLayout.ItemRole.FieldRole,
+            )
+
+            if (
+                field_item is not None
+                and field_item.widget()
+                is target_widget
+            ):
+                return row
+
+        return None
+
+    def _find_listing_form(
+        self,
+    ) -> QFormLayout:
+        for layout in self.findChildren(
+            QFormLayout
+        ):
+            return layout
+
+        raise RuntimeError(
+            "Could not find the listing form layout."
+        )
+
+    def _load_listing(
+        self,
+    ) -> None:
+        if self.listing_id is None:
+            return
+
+        try:
+            listing = get_listing(
+                self.listing_id
+            )
+
+        except ListingNotFoundError:
+            BrandedMessageDialog.error(
+                self,
+                title="Listing Not Found",
+                message="This listing could not be found.",
+            )
+
+            self.reject()
+
+            return
+
+        except Exception as exc:
+            show_logged_error(
+                self,
+                title="Unable to Load Listing",
+                message="The listing could not be loaded.",
+                context=(
+                    "Unable to load listing "
+                    f"#{self.listing_id} in editor"
+                ),
+                exception=exc,
+            )
+
+            self.reject()
+
+            return
+
+        self.title_input.setText(
+            listing.title
+        )
+
+        self.description_input.setPlainText(
+            listing.description
+        )
+
+        stored_price = Decimal(
+            str(
+                listing.price
+            )
+        )
+
+        self.price_input.setValue(
+            float(
+                stored_price
+            )
+        )
+
+        self.currency_input.setText(
+            listing.currency
+        )
+
+        self.category_input.setText(
+            listing.category or ""
+        )
+
+        self.subcategory_input.setText(
+            listing.subcategory or ""
+        )
+
+        self.brand_input.setText(
+            listing.brand or ""
+        )
+
+        self.size_input.setText(
+            listing.size or ""
+        )
+
+        self.condition_input.setCurrentText(
+            listing.condition or ""
+        )
+
+        self.colour_input.setText(
+            listing.colour or ""
+        )
+
+        self.material_input.setText(
+            listing.material or ""
+        )
+
+        self.parcel_size_input.setText(
+            listing.parcel_size or ""
+        )
+
+        priority_index = (
+            self.priority_input.findData(
+                listing.priority
+            )
+        )
+
+        if priority_index >= 0:
+            self.priority_input.setCurrentIndex(
+                priority_index
+            )
+
+        original_date = (
+            listing.original_created_date
+        )
+
+        self.original_date_input.setDate(
+            QDate(
+                original_date.year,
+                original_date.month,
+                original_date.day,
+            )
+        )
+
+        self.notes_input.setPlainText(
+            listing.notes or ""
+        )
+
+        self.isbn_input.setText(
+            listing.isbn or ""
+        )
+
+    def _validate_form(
+        self,
+    ) -> bool:
+        title = (
+            self.title_input
+            .text()
+            .strip()
+        )
+
+        if not title:
+            BrandedMessageDialog.warning(
+                self,
+                title="Missing Title",
+                message="Please enter a listing title.",
+            )
+
+            self.title_input.setFocus()
+
+            return False
+
+        if self.price_input.value() <= 0:
+            BrandedMessageDialog.warning(
+                self,
+                title="Invalid Price",
+                message="Please enter a price greater than €0.00.",
+            )
+
+            self.price_input.setFocus()
+
+            return False
+
+        currency = (
+            self.currency_input
+            .text()
+            .strip()
+            .upper()
+        )
+
+        if len(currency) != 3:
+            BrandedMessageDialog.warning(
+                self,
+                title="Invalid Currency",
+                message="Use a three-letter code such as EUR.",
+            )
+
+            self.currency_input.setFocus()
+            self.currency_input.selectAll()
+
+            return False
+
+        isbn_text = (
+            self.isbn_input
+            .text()
+            .strip()
+        )
+
+        if isbn_text:
+            try:
+                normalize_isbn(
+                    isbn_text
+                )
+
+            except InvalidISBNError:
+                BrandedMessageDialog.warning(
+                    self,
+                    title="Invalid ISBN",
+                    message="Enter a valid ISBN-10 or ISBN-13.",
+                )
+
+                if hasattr(
+                    self,
+                    "item_details_toggle",
+                ):
+                    self.item_details_toggle.setChecked(
+                        True
+                    )
+
+                self.isbn_input.setFocus()
+                self.isbn_input.selectAll()
+
+                return False
+
+        return True
+
+    def _build_listing_input(
+        self,
+    ) -> ListingInput:
+        data = (
+            self._listing_base_build_listing_input()
+        )
+
+        data.isbn = (
+            self.isbn_input.text()
+        )
+
+        return data

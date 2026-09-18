@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import date
 
@@ -170,7 +170,7 @@ class HistoryRecordRow(QFrame):
                 is not None
             ):
                 previous_text += (
-                    " Â· "
+                    " · "
                     f"{self.record.days_since_previous} "
                     "days apart"
                 )
@@ -186,7 +186,7 @@ class HistoryRecordRow(QFrame):
             )
         )
 
-        return "   â€¢   ".join(
+        return "   •   ".join(
             values
         )
 

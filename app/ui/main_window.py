@@ -26,9 +26,6 @@ from app.services.settings_service import (
     default_settings,
     load_settings,
 )
-from app.ui.category_enabled_all_listings import (
-    CategoryEnabledAllListingsPage as AllListingsPage,
-)
 from app.ui.daily_queue import (
     DailyQueuePage,
 )
@@ -40,9 +37,6 @@ from app.ui.history_page import (
 )
 from app.ui.import_dialog import (
     ImportListingsDialog,
-)
-from app.ui.isbn_listing_dialog import (
-    ISBNListingDialog as ListingDialog,
 )
 from app.ui.lifecycle_dialog import (
     ListingLifecycleDialog,
@@ -58,6 +52,73 @@ from app.ui.status_listings import (
     SoldListingsPage,
 )
 
+from pathlib import Path
+
+from PySide6.QtCore import (
+    QSettings,
+    QTimer,
+    Qt,
+)
+from PySide6.QtGui import (
+    QCloseEvent,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSizePolicy,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app import (
+    APP_VERSION,
+)
+from app.services.logging_service import (
+    get_logger,
+    initialize_logging,
+    install_exception_hooks,
+)
+from app.ui.add_import_hub import (
+    AddImportHub,
+)
+from app.ui.relisting_preparation import (
+    RelistingPreparationDialog,
+)
+from app.ui.components.cards.dashboard_moment import (
+    DashboardMoment,
+)
+from app.ui.components.dialogs.about_dialog import (
+    AboutDialog,
+)
+from app.ui.components.dialogs.welcome_dialog import (
+    WelcomeDialog,
+)
+WELCOME_COMPLETE_KEY = (
+    "onboarding/welcome_complete"
+)
+
+
+from app.ui.vinted_export_import_dialog import (
+    VintedExportImportDialog,
+)
+
+from app.ui.components.dialogs.message_dialog import (
+    BrandedMessageDialog,
+)
+
+from app.ui.all_listings import (
+    AllListingsPage,
+)
+
+from app.ui.listing_dialog import (
+    ListingDialog,
+)
 
 class MainWindow(QMainWindow):
     """
@@ -90,7 +151,7 @@ class MainWindow(QMainWindow):
         "Archived",
     }
 
-    def __init__(
+    def _initialize_core_window(
         self,
     ) -> None:
         super().__init__()
@@ -458,7 +519,7 @@ class MainWindow(QMainWindow):
             page,
         )
 
-    def _ensure_page_loaded(
+    def _core_ensure_page_loaded(
         self,
         page_name: str,
     ) -> QWidget:
@@ -1319,7 +1380,7 @@ class MainWindow(QMainWindow):
             page_name
         )
 
-    def _change_page(
+    def _core_change_page(
         self,
         index: int,
         page_name: str,
@@ -1502,3 +1563,1247 @@ class MainWindow(QMainWindow):
             }
             """
         )
+
+    """
+    Final branded application shell.
+
+    Owns:
+    - polished sidebar and page headers
+    - persistent application logging
+    - unexpected-error handling
+    - one-time welcome
+    - Add / Import hub
+    - Dashboard moment
+    - branded relisting workflow
+    - Settings About card
+    - persistent window geometry
+    """
+
+    PAGE_SUBTITLES = {
+        "Dashboard": (
+            "Overview of your inventory, relisting activity "
+            "and items that may need attention."
+        ),
+        "Today's Queue": (
+            "Listings selected for today's manual "
+            "relisting workflow."
+        ),
+        "All Listings": (
+            "Search, filter and manage your complete "
+            "local listing inventory."
+        ),
+        "Add Listing": (
+            "Create a listing manually or import "
+            "existing listing data."
+        ),
+        "History": (
+            "Review your manual relisting activity "
+            "grouped by day."
+        ),
+        "Sold": (
+            "Listings you have marked as sold."
+        ),
+        "Archived": (
+            "Listings currently stored in your archive."
+        ),
+        "Settings": (
+            "Configure relisting rules, storage "
+            "and application preferences."
+        ),
+    }
+
+    def __init__(
+        self,
+    ) -> None:
+        initialize_logging()
+
+        self.logger = get_logger(
+            "main_window"
+        )
+
+        install_exception_hooks(
+            self._show_unhandled_error
+        )
+
+        self.logger.info(
+            "Creating main application window"
+        )
+
+        self._settings_about_installed = False
+
+        self._dashboard_moment_installed = False
+
+        self._dashboard_moment: (
+            DashboardMoment | None
+        ) = None
+
+        self._window_settings = (
+            QSettings()
+        )
+
+        self._initialize_core_window()
+
+        self._install_sidebar_branding()
+
+        self._restore_window_geometry()
+
+        QTimer.singleShot(
+            250,
+            self._show_first_run_welcome_if_needed,
+        )
+
+        self.logger.info(
+            "Main application window ready"
+        )
+
+    # =====================================================
+    # Polished shell
+    # =====================================================
+
+    def _create_sidebar(
+        self,
+    ) -> QWidget:
+        sidebar = QFrame()
+
+        sidebar.setObjectName(
+            "sidebar"
+        )
+
+        sidebar.setFixedWidth(
+            238
+        )
+
+        layout = QVBoxLayout(
+            sidebar
+        )
+
+        layout.setContentsMargins(
+            16,
+            24,
+            16,
+            18,
+        )
+
+        layout.setSpacing(
+            6
+        )
+
+        app_name = QLabel(
+            "Vinted"
+        )
+
+        app_name.setObjectName(
+            "sidebarAppName"
+        )
+
+        subtitle = QLabel(
+            "Relisting Assistant"
+        )
+
+        subtitle.setObjectName(
+            "sidebarSubtitle"
+        )
+
+        workspace_label = QLabel(
+            "LOCAL WORKSPACE"
+        )
+
+        workspace_label.setObjectName(
+            "versionLabel"
+        )
+
+        layout.addWidget(
+            app_name
+        )
+
+        layout.addWidget(
+            subtitle
+        )
+
+        layout.addSpacing(
+            4
+        )
+
+        layout.addWidget(
+            workspace_label
+        )
+
+        layout.addSpacing(
+            20
+        )
+
+        self._add_navigation_group(
+            layout=layout,
+            title="OVERVIEW",
+            pages=[
+                "Dashboard",
+                "Today's Queue",
+            ],
+        )
+
+        layout.addSpacing(
+            10
+        )
+
+        self._add_navigation_group(
+            layout=layout,
+            title="INVENTORY",
+            pages=[
+                "All Listings",
+                "Add Listing",
+            ],
+        )
+
+        layout.addSpacing(
+            10
+        )
+
+        self._add_navigation_group(
+            layout=layout,
+            title="ACTIVITY",
+            pages=[
+                "History",
+                "Sold",
+                "Archived",
+            ],
+        )
+
+        layout.addSpacing(
+            10
+        )
+
+        self._add_navigation_group(
+            layout=layout,
+            title="APP",
+            pages=[
+                "Settings",
+            ],
+        )
+
+        layout.addStretch()
+
+        quick_add_button = QPushButton(
+            "NEW LISTING"
+        )
+
+        quick_add_button.setObjectName(
+            "primaryButton"
+        )
+
+        quick_add_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        quick_add_button.setMinimumHeight(
+            40
+        )
+
+        quick_add_button.setToolTip(
+            "Create a new listing"
+        )
+
+        quick_add_button.clicked.connect(
+            self.open_add_listing_dialog
+        )
+
+        layout.addWidget(
+            quick_add_button
+        )
+
+        layout.addSpacing(
+            12
+        )
+
+        workflow_label = QLabel(
+            "LOCAL â€¢ MANUAL WORKFLOW"
+        )
+
+        workflow_label.setObjectName(
+            "versionLabel"
+        )
+
+        version = QLabel(
+            f"Version {APP_VERSION}"
+        )
+
+        version.setObjectName(
+            "versionLabel"
+        )
+
+        layout.addWidget(
+            workflow_label
+        )
+
+        layout.addWidget(
+            version
+        )
+
+        self.navigation_buttons[
+            "Dashboard"
+        ].setChecked(
+            True
+        )
+
+        return sidebar
+
+    def _add_navigation_group(
+        self,
+        layout: QVBoxLayout,
+        title: str,
+        pages: list[str],
+    ) -> None:
+        section_label = QLabel(
+            title
+        )
+
+        section_label.setObjectName(
+            "versionLabel"
+        )
+
+        layout.addWidget(
+            section_label
+        )
+
+        layout.addSpacing(
+            2
+        )
+
+        for page_name in pages:
+            index = (
+                self.PAGE_INDEXES[
+                    page_name
+                ]
+            )
+
+            button = QPushButton(
+                page_name
+            )
+
+            button.setObjectName(
+                "navigationButton"
+            )
+
+            button.setCheckable(
+                True
+            )
+
+            button.setMinimumHeight(
+                40
+            )
+
+            button.setCursor(
+                Qt.CursorShape.PointingHandCursor
+            )
+
+            button.clicked.connect(
+                lambda checked=False,
+                target_index=index,
+                target_name=page_name:
+                self._change_page(
+                    target_index,
+                    target_name,
+                )
+            )
+
+            self.navigation_buttons[
+                page_name
+            ] = button
+
+            layout.addWidget(
+                button
+            )
+
+    def _create_content_area(
+        self,
+    ) -> QWidget:
+        content = QFrame()
+
+        content.setObjectName(
+            "contentArea"
+        )
+
+        layout = QVBoxLayout(
+            content
+        )
+
+        layout.setContentsMargins(
+            32,
+            26,
+            32,
+            28,
+        )
+
+        layout.setSpacing(
+            16
+        )
+
+        self.page_title = QLabel(
+            "Dashboard"
+        )
+
+        self.page_title.setObjectName(
+            "pageTitle"
+        )
+
+        self.page_subtitle = QLabel(
+            self.PAGE_SUBTITLES[
+                "Dashboard"
+            ]
+        )
+
+        self.page_subtitle.setObjectName(
+            "placeholderText"
+        )
+
+        self.page_subtitle.setWordWrap(
+            True
+        )
+
+        layout.addWidget(
+            self.page_title
+        )
+
+        layout.addWidget(
+            self.page_subtitle
+        )
+
+        layout.addSpacing(
+            2
+        )
+
+        self.page_stack = (
+            QStackedWidget()
+        )
+
+        self.page_stack.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+
+        for _ in range(
+            len(
+                self.PAGE_INDEXES
+            )
+        ):
+            self.page_stack.addWidget(
+                self._create_lazy_placeholder()
+            )
+
+        layout.addWidget(
+            self.page_stack,
+            1,
+        )
+
+        self._ensure_page_loaded(
+            "Dashboard"
+        )
+
+        self._ensure_page_loaded(
+            "Add Listing"
+        )
+
+        self.page_stack.setCurrentIndex(
+            self.PAGE_INDEXES[
+                "Dashboard"
+            ]
+        )
+
+        self._update_header(
+            "Dashboard"
+        )
+
+        return content
+
+    def _update_header(
+        self,
+        page_name: str,
+    ) -> None:
+        self.page_title.setText(
+            page_name
+        )
+
+        self.page_subtitle.setText(
+            self.PAGE_SUBTITLES.get(
+                page_name,
+                "",
+            )
+        )
+
+    def _apply_styles(
+        self,
+    ) -> None:
+        """
+        ThemeManager owns all colours and styling.
+        """
+        return
+
+    # =====================================================
+    # Unexpected errors
+    # =====================================================
+
+    def _show_unhandled_error(
+        self,
+        log_path: Path,
+    ) -> None:
+        app = QApplication.instance()
+
+        parent = None
+
+        if app is not None:
+            parent = (
+                app.activeWindow()
+            )
+
+        message_box = QMessageBox(
+            parent
+        )
+
+        message_box.setIcon(
+            QMessageBox.Icon.Critical
+        )
+
+        message_box.setWindowTitle(
+            "Something Went Wrong"
+        )
+
+        message_box.setText(
+            "The app ran into an unexpected problem."
+        )
+
+        message_box.setInformativeText(
+            (
+                "Technical details were saved to the local "
+                "application log.\n\n"
+                "You can close this message and continue if the "
+                "app is still responding. If the problem happens "
+                "again, restart the app."
+            )
+        )
+
+        message_box.setDetailedText(
+            (
+                "Log file:\n"
+                f"{log_path}\n\n"
+                "The log can contain technical information such "
+                "as local file paths. Review it before sharing it "
+                "with anyone."
+            )
+        )
+
+        message_box.setStandardButtons(
+            QMessageBox.StandardButton.Ok
+        )
+
+        message_box.exec()
+
+    # =====================================================
+    # Add / Import hub
+    # =====================================================
+
+    def _create_add_listing_page(
+        self,
+    ) -> QWidget:
+        page = AddImportHub(
+            add_manual=(
+                self.open_add_listing_dialog
+            ),
+            import_vinted=(
+                self._open_vinted_export_import
+            ),
+            import_generic=(
+                self.open_import_dialog
+            ),
+        )
+
+        self.last_saved_label = (
+            page.status_label
+        )
+
+        return page
+
+    def _open_vinted_export_import(
+        self,
+    ) -> None:
+        """
+        Open the dedicated Vinted data-export importer.
+
+        Imported listings are added locally only. Existing
+        locally edited listings are never overwritten.
+        """
+        try:
+            dialog = VintedExportImportDialog(
+                parent=self
+            )
+
+            dialog.import_completed.connect(
+                self._vinted_import_completed
+            )
+
+            dialog.exec()
+
+        except Exception:
+            self.logger.exception(
+                "Unable to open Vinted Export importer"
+            )
+
+            BrandedMessageDialog.error(
+                self,
+                title="Unable to Open Import",
+                message=(
+                    "The Vinted Export importer "
+                    "could not be opened."
+                ),
+            )
+
+    def _vinted_import_completed(
+        self,
+        imported_count: int,
+    ) -> None:
+        """
+        Refresh listing views after a successful Vinted import.
+        """
+        self._mark_listing_views_dirty()
+
+        if self.last_saved_label is None:
+            return
+
+        if imported_count == 1:
+            message = (
+                "1 new Vinted listing imported."
+            )
+
+        else:
+            message = (
+                f"{imported_count} new Vinted listings imported."
+            )
+
+        self.last_saved_label.setText(
+            message
+        )
+    # =====================================================
+    # First-run welcome
+    # =====================================================
+
+    def _show_first_run_welcome_if_needed(
+        self,
+    ) -> None:
+        completed = (
+            self._window_settings.value(
+                WELCOME_COMPLETE_KEY,
+                False,
+                type=bool,
+            )
+        )
+
+        if completed:
+            return
+
+        app = QApplication.instance()
+
+        app_icon = (
+            app.windowIcon()
+            if app is not None
+            else None
+        )
+
+        dialog = WelcomeDialog(
+            parent=self,
+            app_icon=app_icon,
+        )
+
+        dialog.exec()
+
+        self._window_settings.setValue(
+            WELCOME_COMPLETE_KEY,
+            True,
+        )
+
+        self._window_settings.sync()
+
+        self.logger.info(
+            "First-run welcome completed"
+        )
+
+    # =====================================================
+    # Sidebar branding
+    # =====================================================
+
+    def _install_sidebar_branding(
+        self,
+    ) -> None:
+        sidebar = self.findChild(
+            QFrame,
+            "sidebar",
+        )
+
+        if sidebar is None:
+            return
+
+        sidebar_layout = (
+            sidebar.layout()
+        )
+
+        if not isinstance(
+            sidebar_layout,
+            QVBoxLayout,
+        ):
+            return
+
+        old_name = sidebar.findChild(
+            QLabel,
+            "sidebarAppName",
+        )
+
+        old_subtitle = (
+            sidebar.findChild(
+                QLabel,
+                "sidebarSubtitle",
+            )
+        )
+
+        if old_name is not None:
+            old_name.hide()
+
+        if old_subtitle is not None:
+            old_subtitle.hide()
+
+        brand_frame = QFrame()
+
+        brand_frame.setObjectName(
+            "brandIdentity"
+        )
+
+        brand_layout = QHBoxLayout(
+            brand_frame
+        )
+
+        brand_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            4,
+        )
+
+        brand_layout.setSpacing(
+            10
+        )
+
+        icon_label = QLabel()
+
+        icon_label.setFixedSize(
+            48,
+            48,
+        )
+
+        icon_label.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+
+        app = QApplication.instance()
+
+        if app is not None:
+            icon = app.windowIcon()
+
+            if not icon.isNull():
+                icon_label.setPixmap(
+                    icon.pixmap(
+                        46,
+                        46,
+                    )
+                )
+
+        brand_layout.addWidget(
+            icon_label,
+            0,
+            Qt.AlignmentFlag.AlignTop,
+        )
+
+        text_layout = QVBoxLayout()
+
+        text_layout.setContentsMargins(
+            0,
+            2,
+            0,
+            0,
+        )
+
+        text_layout.setSpacing(
+            1
+        )
+
+        name = QLabel(
+            "Vinted"
+        )
+
+        name.setObjectName(
+            "sidebarAppName"
+        )
+
+        subtitle = QLabel(
+            "Relisting Assistant"
+        )
+
+        subtitle.setObjectName(
+            "sidebarSubtitle"
+        )
+
+        subtitle.setWordWrap(
+            True
+        )
+
+        text_layout.addWidget(
+            name
+        )
+
+        text_layout.addWidget(
+            subtitle
+        )
+
+        brand_layout.addLayout(
+            text_layout,
+            1,
+        )
+
+        sidebar_layout.insertWidget(
+            0,
+            brand_frame,
+        )
+
+    # =====================================================
+    # Page enhancements
+    # =====================================================
+
+    def _ensure_page_loaded(
+        self,
+        page_name: str,
+    ) -> QWidget:
+        page = self._core_ensure_page_loaded(
+            page_name
+        )
+
+        if (
+            page_name == "Dashboard"
+            and not self._dashboard_moment_installed
+        ):
+            self._install_dashboard_moment(
+                page
+            )
+
+        if (
+            page_name == "Settings"
+            and not self._settings_about_installed
+        ):
+            self._install_settings_about_card(
+                page
+            )
+
+        return page
+
+    def _change_page(
+        self,
+        index: int,
+        page_name: str,
+    ) -> None:
+        self._core_change_page(
+            index,
+            page_name,
+        )
+
+        self._update_header(
+            page_name
+        )
+
+        if (
+            page_name == "Dashboard"
+            and self._dashboard_moment
+            is not None
+        ):
+            self._dashboard_moment.refresh()
+
+    # =====================================================
+    # Relisting Preparation
+    # =====================================================
+
+    def open_relisting_preparation(
+        self,
+        listing_id: int,
+    ) -> None:
+        dialog = (
+            RelistingPreparationDialog(
+                listing_id=listing_id,
+                parent=self,
+                configured_limit=(
+                    self.settings
+                    .daily_relist_limit
+                ),
+                minimum_age_days=(
+                    self.settings
+                    .minimum_relist_age_days
+                ),
+                vinted_url=(
+                    self.settings
+                    .vinted_url
+                ),
+            )
+        )
+
+        dialog.relisted.connect(
+            self._preparation_relisted
+        )
+
+        dialog.exec()
+
+        self._schedule_current_page_refresh()
+
+    # =====================================================
+    # Dashboard personality
+    # =====================================================
+
+    def _install_dashboard_moment(
+        self,
+        page: QWidget,
+    ) -> None:
+        content_layout = getattr(
+            page,
+            "content_layout",
+            None,
+        )
+
+        if not isinstance(
+            content_layout,
+            QVBoxLayout,
+        ):
+            return
+
+        moment = DashboardMoment(
+            parent=page
+        )
+
+        content_layout.insertWidget(
+            0,
+            moment,
+        )
+
+        self._dashboard_moment = (
+            moment
+        )
+
+        self._dashboard_moment_installed = (
+            True
+        )
+
+    # =====================================================
+    # Settings enhancement
+    # =====================================================
+
+    def _install_settings_about_card(
+        self,
+        page: QWidget,
+    ) -> None:
+        scroll_area = getattr(
+            page,
+            "scroll_area",
+            None,
+        )
+
+        if scroll_area is None:
+            return
+
+        content = (
+            scroll_area.widget()
+        )
+
+        if content is None:
+            return
+
+        content_layout = (
+            content.layout()
+        )
+
+        if not isinstance(
+            content_layout,
+            QVBoxLayout,
+        ):
+            return
+
+        card = QFrame()
+
+        card.setObjectName(
+            "settingsFrame"
+        )
+
+        card_layout = QHBoxLayout(
+            card
+        )
+
+        card_layout.setContentsMargins(
+            24,
+            20,
+            24,
+            20,
+        )
+
+        card_layout.setSpacing(
+            16
+        )
+
+        icon_label = QLabel()
+
+        icon_label.setFixedSize(
+            64,
+            64,
+        )
+
+        icon_label.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+
+        app = QApplication.instance()
+
+        if app is not None:
+            icon = app.windowIcon()
+
+            if not icon.isNull():
+                icon_label.setPixmap(
+                    icon.pixmap(
+                        60,
+                        60,
+                    )
+                )
+
+        card_layout.addWidget(
+            icon_label,
+            0,
+            Qt.AlignmentFlag.AlignTop,
+        )
+
+        information = QVBoxLayout()
+
+        information.setSpacing(
+            5
+        )
+
+        heading = QLabel(
+            "ABOUT THE APP"
+        )
+
+        heading.setObjectName(
+            "sectionHeading"
+        )
+
+        app_name = QLabel(
+            "Vinted Relisting Assistant"
+        )
+
+        app_name.setObjectName(
+            "placeholderTitle"
+        )
+
+        version = QLabel(
+            f"Version {APP_VERSION}"
+        )
+
+        version.setObjectName(
+            "informationText"
+        )
+
+        message = QLabel(
+            (
+                "A little helper for keeping your listings "
+                "organised and making manual relisting easier."
+            )
+        )
+
+        message.setObjectName(
+            "informationText"
+        )
+
+        message.setWordWrap(
+            True
+        )
+
+        information.addWidget(
+            heading
+        )
+
+        information.addWidget(
+            app_name
+        )
+
+        information.addWidget(
+            version
+        )
+
+        information.addWidget(
+            message
+        )
+
+        card_layout.addLayout(
+            information,
+            1,
+        )
+
+        about_button = QPushButton(
+            "ABOUT & APP INFO"
+        )
+
+        about_button.setObjectName(
+            "secondaryButton"
+        )
+
+        about_button.setMinimumHeight(
+            40
+        )
+
+        about_button.setMinimumWidth(
+            150
+        )
+
+        about_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        about_button.clicked.connect(
+            self._open_about_dialog
+        )
+
+        card_layout.addWidget(
+            about_button,
+            0,
+            Qt.AlignmentFlag.AlignVCenter,
+        )
+
+        insertion_index = max(
+            0,
+            content_layout.count() - 1,
+        )
+
+        content_layout.insertWidget(
+            insertion_index,
+            card,
+        )
+
+        self._settings_about_installed = (
+            True
+        )
+
+    def _open_about_dialog(
+        self,
+    ) -> None:
+        app = QApplication.instance()
+
+        app_icon = (
+            app.windowIcon()
+            if app is not None
+            else None
+        )
+
+        dialog = AboutDialog(
+            parent=self,
+            app_icon=app_icon,
+        )
+
+        dialog.exec()
+
+    # =====================================================
+    # Window persistence
+    # =====================================================
+
+    def _restore_window_geometry(
+        self,
+    ) -> None:
+        geometry = (
+            self._window_settings.value(
+                "window/geometry"
+            )
+        )
+
+        if geometry is None:
+            return
+
+        restored = self.restoreGeometry(
+            geometry
+        )
+
+        if not restored:
+            return
+
+        app = QApplication.instance()
+
+        if app is None:
+            return
+
+        window_center = (
+            self.frameGeometry().center()
+        )
+
+        if (
+            app.screenAt(
+                window_center
+            )
+            is not None
+        ):
+            return
+
+        primary_screen = (
+            app.primaryScreen()
+        )
+
+        if primary_screen is None:
+            return
+
+        available = (
+            primary_screen.availableGeometry()
+        )
+
+        self.resize(
+            min(
+                1200,
+                available.width(),
+            ),
+            min(
+                760,
+                available.height(),
+            ),
+        )
+
+        frame = (
+            self.frameGeometry()
+        )
+
+        frame.moveCenter(
+            available.center()
+        )
+
+        self.move(
+            frame.topLeft()
+        )
+
+    def _save_window_geometry(
+        self,
+    ) -> None:
+        self._window_settings.setValue(
+            "window/geometry",
+            self.saveGeometry(),
+        )
+
+        self._window_settings.sync()
+
+        self.logger.info(
+            "Window geometry saved"
+        )
+
+    def closeEvent(
+        self,
+        event: QCloseEvent,
+    ) -> None:
+        self.logger.info(
+            "Application window closing"
+        )
+
+        self._save_window_geometry()
+
+        super().closeEvent(
+            event
+        )
+
