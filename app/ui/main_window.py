@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -40,7 +40,21 @@ from app.ui.status_listings import (
 class MainWindow(QMainWindow):
     """
     Main Vinted Relisting Assistant window.
+
+    Data-heavy pages are refreshed lazily.
+
+    When listing data changes, hidden pages are marked dirty
+    instead of all being rebuilt immediately.
     """
+
+    DATA_PAGES = {
+        "Dashboard",
+        "Today's Queue",
+        "All Listings",
+        "History",
+        "Sold",
+        "Archived",
+    }
 
     def __init__(self) -> None:
         super().__init__()
@@ -48,6 +62,17 @@ class MainWindow(QMainWindow):
         self.settings = (
             self._load_settings_safely()
         )
+
+        self.navigation_buttons: dict[
+            str,
+            QPushButton,
+        ] = {}
+
+        self._current_page_name = (
+            "Dashboard"
+        )
+
+        self._dirty_pages: set[str] = set()
 
         self.setWindowTitle(
             APP_NAME
@@ -63,14 +88,12 @@ class MainWindow(QMainWindow):
             650,
         )
 
-        self.navigation_buttons: dict[
-            str,
-            QPushButton,
-        ] = {}
-
         self._build_ui()
         self._apply_styles()
-        self._apply_runtime_settings()
+
+        self._apply_runtime_settings(
+            refresh_queue=True
+        )
 
     def _load_settings_safely(
         self,
@@ -283,7 +306,9 @@ class MainWindow(QMainWindow):
             QSizePolicy.Policy.Expanding,
         )
 
-        self.dashboard_page = DashboardPage()
+        self.dashboard_page = (
+            DashboardPage()
+        )
 
         self.dashboard_page.edit_requested.connect(
             self.open_edit_listing_dialog
@@ -307,7 +332,9 @@ class MainWindow(QMainWindow):
             self.dashboard_page
         )
 
-        self.daily_queue_page = DailyQueuePage()
+        self.daily_queue_page = (
+            DailyQueuePage()
+        )
 
         self.daily_queue_page.prepare_requested.connect(
             self.open_relisting_preparation
@@ -325,7 +352,9 @@ class MainWindow(QMainWindow):
             self.daily_queue_page
         )
 
-        self.all_listings_page = AllListingsPage()
+        self.all_listings_page = (
+            AllListingsPage()
+        )
 
         self.all_listings_page.edit_requested.connect(
             self.open_edit_listing_dialog
@@ -343,7 +372,9 @@ class MainWindow(QMainWindow):
             self._create_add_listing_page()
         )
 
-        self.history_page = HistoryPage()
+        self.history_page = (
+            HistoryPage()
+        )
 
         self.history_page.edit_requested.connect(
             self.open_edit_listing_dialog
@@ -353,7 +384,9 @@ class MainWindow(QMainWindow):
             self.history_page
         )
 
-        self.sold_page = SoldListingsPage()
+        self.sold_page = (
+            SoldListingsPage()
+        )
 
         self.sold_page.edit_requested.connect(
             self.open_edit_listing_dialog
@@ -367,7 +400,9 @@ class MainWindow(QMainWindow):
             self.sold_page
         )
 
-        self.archived_page = ArchivedListingsPage()
+        self.archived_page = (
+            ArchivedListingsPage()
+        )
 
         self.archived_page.edit_requested.connect(
             self.open_edit_listing_dialog
@@ -381,7 +416,9 @@ class MainWindow(QMainWindow):
             self.archived_page
         )
 
-        self.settings_page = SettingsPage()
+        self.settings_page = (
+            SettingsPage()
+        )
 
         self.settings_page.settings_saved.connect(
             self._settings_saved
@@ -562,6 +599,8 @@ class MainWindow(QMainWindow):
 
         dialog.exec()
 
+        self._schedule_current_page_refresh()
+
     def open_import_dialog(
         self,
     ) -> None:
@@ -599,6 +638,8 @@ class MainWindow(QMainWindow):
 
         dialog.exec()
 
+        self._schedule_current_page_refresh()
+
     def open_lifecycle_dialog(
         self,
         listing_id: int,
@@ -628,17 +669,24 @@ class MainWindow(QMainWindow):
 
         dialog.exec()
 
+        self._schedule_current_page_refresh()
+
     def _settings_saved(
         self,
         settings: AppSettings,
     ) -> None:
         self.settings = settings
 
-        self._apply_runtime_settings()
+        self._apply_runtime_settings(
+            refresh_queue=False
+        )
 
-        self._refresh_listing_views()
+        self._mark_listing_views_dirty()
 
-    def _apply_runtime_settings(self) -> None:
+    def _apply_runtime_settings(
+        self,
+        refresh_queue: bool = False,
+    ) -> None:
         self.daily_queue_page.daily_limit = (
             self.settings.daily_relist_limit
         )
@@ -654,7 +702,12 @@ class MainWindow(QMainWindow):
             )
         )
 
-        self.daily_queue_page.refresh()
+        if refresh_queue:
+            self.daily_queue_page.refresh()
+
+            self._dirty_pages.discard(
+                "Today's Queue"
+            )
 
     def _listing_saved(
         self,
@@ -667,7 +720,7 @@ class MainWindow(QMainWindow):
             )
         )
 
-        self._refresh_listing_views()
+        self._mark_listing_views_dirty()
 
         QMessageBox.information(
             self,
@@ -682,7 +735,7 @@ class MainWindow(QMainWindow):
         self,
         listing_id: int,
     ) -> None:
-        self._refresh_listing_views()
+        self._mark_listing_views_dirty()
 
         QMessageBox.information(
             self,
@@ -704,7 +757,7 @@ class MainWindow(QMainWindow):
             )
         )
 
-        self._refresh_listing_views()
+        self._mark_listing_views_dirty()
 
     def _preparation_relisted(
         self,
@@ -712,12 +765,22 @@ class MainWindow(QMainWindow):
     ) -> None:
         del listing_id
 
-        self._refresh_listing_views()
+        self._mark_listing_views_dirty()
 
     def _queue_changed(
         self,
     ) -> None:
-        self._refresh_listing_views()
+        """
+        DailyQueuePage refreshes itself before emitting this signal.
+
+        Mark the other data pages dirty instead of rebuilding
+        all of them immediately.
+        """
+        self._mark_listing_views_dirty(
+            exclude={
+                "Today's Queue",
+            }
+        )
 
     def _lifecycle_changed(
         self,
@@ -725,7 +788,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         del listing_id
 
-        self._refresh_listing_views()
+        self._mark_listing_views_dirty()
 
     def _lifecycle_deleted(
         self,
@@ -733,30 +796,67 @@ class MainWindow(QMainWindow):
     ) -> None:
         del listing_id
 
-        self._refresh_listing_views()
+        self._mark_listing_views_dirty()
 
-    def _refresh_listing_views(
+    def _mark_listing_views_dirty(
         self,
+        exclude: set[str] | None = None,
     ) -> None:
-        self.dashboard_page.refresh()
-        self.all_listings_page.refresh()
-        self.daily_queue_page.refresh()
-        self.history_page.refresh()
-        self.sold_page.refresh()
-        self.archived_page.refresh()
-
-    def _change_page(
-        self,
-        index: int,
-        page_name: str,
-    ) -> None:
-        self.page_stack.setCurrentIndex(
-            index
+        excluded = (
+            exclude
+            or set()
         )
 
-        self.page_title.setText(
+        self._dirty_pages.update(
+            self.DATA_PAGES
+            - excluded
+        )
+
+    def _schedule_current_page_refresh(
+        self,
+    ) -> None:
+        page_name = (
+            self._current_page_name
+        )
+
+        if (
             page_name
+            not in self.DATA_PAGES
+        ):
+            return
+
+        QTimer.singleShot(
+            0,
+            lambda name=page_name: (
+                self._refresh_page_if_needed(
+                    name
+                )
+            ),
         )
+
+    def _refresh_page_if_needed(
+        self,
+        page_name: str,
+        force: bool = False,
+    ) -> None:
+        """
+        Refresh one page only when its data has changed.
+
+        A scheduled refresh is ignored if the user has already
+        navigated somewhere else.
+        """
+        if (
+            page_name
+            != self._current_page_name
+        ):
+            return
+
+        if (
+            not force
+            and page_name
+            not in self._dirty_pages
+        ):
+            return
 
         if page_name == "Dashboard":
             self.dashboard_page.refresh()
@@ -776,8 +876,26 @@ class MainWindow(QMainWindow):
         elif page_name == "Archived":
             self.archived_page.refresh()
 
-        elif page_name == "Settings":
-            self.settings_page.reload()
+        self._dirty_pages.discard(
+            page_name
+        )
+
+    def _change_page(
+        self,
+        index: int,
+        page_name: str,
+    ) -> None:
+        self._current_page_name = (
+            page_name
+        )
+
+        self.page_stack.setCurrentIndex(
+            index
+        )
+
+        self.page_title.setText(
+            page_name
+        )
 
         for (
             name,
@@ -785,6 +903,32 @@ class MainWindow(QMainWindow):
         ) in self.navigation_buttons.items():
             button.setChecked(
                 name == page_name
+            )
+
+        if page_name == "Settings":
+            QTimer.singleShot(
+                0,
+                lambda: (
+                    self.settings_page.reload()
+                    if (
+                        self._current_page_name
+                        == "Settings"
+                    )
+                    else None
+                ),
+            )
+
+        elif (
+            page_name
+            in self.DATA_PAGES
+        ):
+            QTimer.singleShot(
+                0,
+                lambda name=page_name: (
+                    self._refresh_page_if_needed(
+                        name
+                    )
+                ),
             )
 
     def _apply_styles(

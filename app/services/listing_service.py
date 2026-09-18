@@ -7,7 +7,11 @@ from decimal import Decimal
 from sqlalchemy import select
 
 from app.database import session_scope
-from app.models import Listing, ListingPriority
+from app.models import (
+    Listing,
+    ListingPhoto,
+    ListingPriority,
+)
 
 
 class ListingNotFoundError(Exception):
@@ -18,9 +22,6 @@ class ListingNotFoundError(Exception):
 class ListingInput:
     """
     Data required to create or update a listing.
-
-    Photo handling is intentionally not included yet.
-    That is implemented in Stage 6.
     """
 
     title: str
@@ -41,10 +42,14 @@ class ListingInput:
 
     original_created_date: date | None = None
 
-    priority: ListingPriority = ListingPriority.NORMAL
+    priority: ListingPriority = (
+        ListingPriority.NORMAL
+    )
 
 
-def _clean_optional_text(value: str | None) -> str | None:
+def _clean_optional_text(
+    value: str | None,
+) -> str | None:
     """
     Convert empty/whitespace-only optional text to None.
     """
@@ -53,10 +58,16 @@ def _clean_optional_text(value: str | None) -> str | None:
 
     cleaned = value.strip()
 
-    return cleaned if cleaned else None
+    return (
+        cleaned
+        if cleaned
+        else None
+    )
 
 
-def _prepare_input(data: ListingInput) -> ListingInput:
+def _prepare_input(
+    data: ListingInput,
+) -> ListingInput:
     """
     Normalize listing form input before storing it.
     """
@@ -64,28 +75,53 @@ def _prepare_input(data: ListingInput) -> ListingInput:
         title=data.title.strip(),
         description=data.description.strip(),
         price=data.price,
-        currency=data.currency.strip().upper(),
-        category=_clean_optional_text(data.category),
-        subcategory=_clean_optional_text(data.subcategory),
-        brand=_clean_optional_text(data.brand),
-        size=_clean_optional_text(data.size),
-        condition=_clean_optional_text(data.condition),
-        colour=_clean_optional_text(data.colour),
-        material=_clean_optional_text(data.material),
-        parcel_size=_clean_optional_text(data.parcel_size),
+        currency=(
+            data.currency
+            .strip()
+            .upper()
+        ),
+        category=_clean_optional_text(
+            data.category
+        ),
+        subcategory=_clean_optional_text(
+            data.subcategory
+        ),
+        brand=_clean_optional_text(
+            data.brand
+        ),
+        size=_clean_optional_text(
+            data.size
+        ),
+        condition=_clean_optional_text(
+            data.condition
+        ),
+        colour=_clean_optional_text(
+            data.colour
+        ),
+        material=_clean_optional_text(
+            data.material
+        ),
+        parcel_size=_clean_optional_text(
+            data.parcel_size
+        ),
         notes=data.notes.strip(),
         original_created_date=(
-            data.original_created_date or date.today()
+            data.original_created_date
+            or date.today()
         ),
         priority=data.priority,
     )
 
 
-def create_listing(data: ListingInput) -> int:
+def create_listing(
+    data: ListingInput,
+) -> int:
     """
     Create a listing and return its generated database ID.
     """
-    prepared = _prepare_input(data)
+    prepared = _prepare_input(
+        data
+    )
 
     with session_scope() as session:
         listing = Listing(
@@ -102,11 +138,16 @@ def create_listing(data: ListingInput) -> int:
             material=prepared.material,
             parcel_size=prepared.parcel_size,
             notes=prepared.notes,
-            original_created_date=prepared.original_created_date,
+            original_created_date=(
+                prepared.original_created_date
+            ),
             priority=prepared.priority,
         )
 
-        session.add(listing)
+        session.add(
+            listing
+        )
+
         session.flush()
 
         listing_id = listing.id
@@ -121,51 +162,110 @@ def update_listing(
     """
     Update an existing listing.
     """
-    prepared = _prepare_input(data)
+    prepared = _prepare_input(
+        data
+    )
 
     with session_scope() as session:
-        listing = session.get(Listing, listing_id)
+        listing = session.get(
+            Listing,
+            listing_id,
+        )
 
         if listing is None:
             raise ListingNotFoundError(
-                f"Listing with ID {listing_id} does not exist."
+                (
+                    "Listing with ID "
+                    f"{listing_id} does not exist."
+                )
             )
 
-        listing.title = prepared.title
-        listing.description = prepared.description
-        listing.price = prepared.price
-        listing.currency = prepared.currency
+        listing.title = (
+            prepared.title
+        )
 
-        listing.category = prepared.category
-        listing.subcategory = prepared.subcategory
-        listing.brand = prepared.brand
-        listing.size = prepared.size
-        listing.condition = prepared.condition
-        listing.colour = prepared.colour
-        listing.material = prepared.material
-        listing.parcel_size = prepared.parcel_size
+        listing.description = (
+            prepared.description
+        )
 
-        listing.notes = prepared.notes
-        listing.original_created_date = prepared.original_created_date
-        listing.priority = prepared.priority
+        listing.price = (
+            prepared.price
+        )
+
+        listing.currency = (
+            prepared.currency
+        )
+
+        listing.category = (
+            prepared.category
+        )
+
+        listing.subcategory = (
+            prepared.subcategory
+        )
+
+        listing.brand = (
+            prepared.brand
+        )
+
+        listing.size = (
+            prepared.size
+        )
+
+        listing.condition = (
+            prepared.condition
+        )
+
+        listing.colour = (
+            prepared.colour
+        )
+
+        listing.material = (
+            prepared.material
+        )
+
+        listing.parcel_size = (
+            prepared.parcel_size
+        )
+
+        listing.notes = (
+            prepared.notes
+        )
+
+        listing.original_created_date = (
+            prepared.original_created_date
+        )
+
+        listing.priority = (
+            prepared.priority
+        )
 
 
-def get_listing(listing_id: int) -> Listing:
+def get_listing(
+    listing_id: int,
+) -> Listing:
     """
     Retrieve one listing by ID.
 
-    The returned object is detached from the database session and is
-    intended for reading its ordinary scalar fields.
+    The returned object is detached from the database session.
     """
     with session_scope() as session:
-        listing = session.get(Listing, listing_id)
+        listing = session.get(
+            Listing,
+            listing_id,
+        )
 
         if listing is None:
             raise ListingNotFoundError(
-                f"Listing with ID {listing_id} does not exist."
+                (
+                    "Listing with ID "
+                    f"{listing_id} does not exist."
+                )
             )
 
-        session.expunge(listing)
+        session.expunge(
+            listing
+        )
 
         return listing
 
@@ -173,18 +273,87 @@ def get_listing(listing_id: int) -> Listing:
 def get_all_listings() -> list[Listing]:
     """
     Return all listings, newest database records first.
-
-    This function will be expanded during Stage 7 and Stage 12 when
-    browsing, searching, filtering, and sorting are implemented.
     """
     with session_scope() as session:
-        statement = select(Listing).order_by(Listing.id.desc())
+        statement = (
+            select(
+                Listing
+            )
+            .order_by(
+                Listing.id.desc()
+            )
+        )
 
         listings = list(
-            session.scalars(statement).all()
+            session.scalars(
+                statement
+            ).all()
         )
 
         for listing in listings:
-            session.expunge(listing)
+            session.expunge(
+                listing
+            )
 
         return listings
+
+
+def get_listing_photos_for_listings(
+    listing_ids: list[int],
+) -> dict[int, list[ListingPhoto]]:
+    """
+    Load photos for multiple listings in one database query.
+
+    This avoids one separate database query for every visible
+    ListingCard.
+    """
+    if not listing_ids:
+        return {}
+
+    unique_ids = list(
+        dict.fromkeys(
+            listing_ids
+        )
+    )
+
+    result: dict[
+        int,
+        list[ListingPhoto],
+    ] = {
+        listing_id: []
+        for listing_id in unique_ids
+    }
+
+    with session_scope() as session:
+        photos = list(
+            session.scalars(
+                select(
+                    ListingPhoto
+                )
+                .where(
+                    ListingPhoto.listing_id.in_(
+                        unique_ids
+                    )
+                )
+                .order_by(
+                    ListingPhoto.listing_id,
+                    ListingPhoto.display_order,
+                    ListingPhoto.id,
+                )
+            ).all()
+        )
+
+        for photo in photos:
+            result.setdefault(
+                photo.listing_id,
+                [],
+            ).append(
+                photo
+            )
+
+        for photo in photos:
+            session.expunge(
+                photo
+            )
+
+    return result

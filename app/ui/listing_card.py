@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from datetime import date
 
-from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QPixmap
+from PySide6.QtCore import (
+    Qt,
+    QUrl,
+    Signal,
+)
+from PySide6.QtGui import (
+    QDesktopServices,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -14,17 +21,25 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.models import Listing
+from app.models import (
+    Listing,
+    ListingPhoto,
+)
 from app.services.photo_service import (
     get_listing_photos,
     get_thumbnail_path,
 )
-from app.utils.paths import get_listing_photos_directory
+from app.utils.paths import (
+    get_listing_photos_directory,
+)
 
 
 class ListingCard(QFrame):
     """
     Visual summary card for one listing.
+
+    Photos can be supplied by the parent page so a large page
+    does not make one database query per card.
     """
 
     edit_requested = Signal(int)
@@ -33,6 +48,7 @@ class ListingCard(QFrame):
     def __init__(
         self,
         listing: Listing,
+        photos: list[ListingPhoto] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(
@@ -40,6 +56,10 @@ class ListingCard(QFrame):
         )
 
         self.listing = listing
+
+        self._preloaded_photos = (
+            photos
+        )
 
         self.setObjectName(
             "listingCard"
@@ -57,7 +77,9 @@ class ListingCard(QFrame):
         self._build_ui()
         self._apply_styles()
 
-    def _build_ui(self) -> None:
+    def _build_ui(
+        self,
+    ) -> None:
         main_layout = QHBoxLayout(
             self
         )
@@ -79,7 +101,9 @@ class ListingCard(QFrame):
             photo
         )
 
-        details_layout = QVBoxLayout()
+        details_layout = (
+            QVBoxLayout()
+        )
 
         details_layout.setSpacing(
             6
@@ -210,7 +234,9 @@ class ListingCard(QFrame):
             1,
         )
 
-        button_layout = QVBoxLayout()
+        button_layout = (
+            QVBoxLayout()
+        )
 
         button_layout.setSpacing(
             8
@@ -229,8 +255,10 @@ class ListingCard(QFrame):
         )
 
         edit_button.clicked.connect(
-            lambda: self.edit_requested.emit(
-                self.listing.id
+            lambda: (
+                self.edit_requested.emit(
+                    self.listing.id
+                )
             )
         )
 
@@ -247,8 +275,10 @@ class ListingCard(QFrame):
         )
 
         manage_button.clicked.connect(
-            lambda: self.manage_requested.emit(
-                self.listing.id
+            lambda: (
+                self.manage_requested.emit(
+                    self.listing.id
+                )
             )
         )
 
@@ -286,11 +316,18 @@ class ListingCard(QFrame):
             button_layout
         )
 
-    def _status_text(self) -> str:
+    def _status_text(
+        self,
+    ) -> str:
         if self.listing.paused_indefinitely:
-            return "Paused indefinitely"
+            return (
+                "Paused indefinitely"
+            )
 
-        if self.listing.paused_until is not None:
+        if (
+            self.listing.paused_until
+            is not None
+        ):
             return (
                 "Paused until "
                 f"{self.listing.paused_until:%d %b %Y}"
@@ -303,7 +340,9 @@ class ListingCard(QFrame):
             .capitalize()
         )
 
-    def _status_object_name(self) -> str:
+    def _status_object_name(
+        self,
+    ) -> str:
         status = (
             self.listing.status.value
         )
@@ -320,7 +359,9 @@ class ListingCard(QFrame):
             "statusBadge",
         )
 
-    def _create_photo(self) -> QWidget:
+    def _create_photo(
+        self,
+    ) -> QWidget:
         container = QFrame()
 
         container.setObjectName(
@@ -355,9 +396,20 @@ class ListingCard(QFrame):
         )
 
         try:
-            photos = get_listing_photos(
-                self.listing.id
-            )
+            if (
+                self._preloaded_photos
+                is None
+            ):
+                photos = (
+                    get_listing_photos(
+                        self.listing.id
+                    )
+                )
+
+            else:
+                photos = (
+                    self._preloaded_photos
+                )
 
             cover = next(
                 (
@@ -365,9 +417,11 @@ class ListingCard(QFrame):
                     for photo in photos
                     if photo.is_cover
                 ),
-                photos[0]
-                if photos
-                else None,
+                (
+                    photos[0]
+                    if photos
+                    else None
+                ),
             )
 
             if cover is None:
@@ -380,12 +434,16 @@ class ListingCard(QFrame):
                 )
 
             else:
-                thumbnail = get_thumbnail_path(
-                    cover
+                thumbnail = (
+                    get_thumbnail_path(
+                        cover
+                    )
                 )
 
                 pixmap = QPixmap(
-                    str(thumbnail)
+                    str(
+                        thumbnail
+                    )
                 )
 
                 if pixmap.isNull():
@@ -422,7 +480,9 @@ class ListingCard(QFrame):
 
         return container
 
-    def _build_metadata_text(self) -> str:
+    def _build_metadata_text(
+        self,
+    ) -> str:
         values: list[str] = []
 
         if self.listing.category:
@@ -432,12 +492,18 @@ class ListingCard(QFrame):
 
         if self.listing.brand:
             values.append(
-                f"Brand: {self.listing.brand}"
+                (
+                    "Brand: "
+                    f"{self.listing.brand}"
+                )
             )
 
         if self.listing.size:
             values.append(
-                f"Size: {self.listing.size}"
+                (
+                    "Size: "
+                    f"{self.listing.size}"
+                )
             )
 
         if self.listing.condition:
@@ -450,7 +516,10 @@ class ListingCard(QFrame):
 
         if self.listing.colour:
             values.append(
-                f"Colour: {self.listing.colour}"
+                (
+                    "Colour: "
+                    f"{self.listing.colour}"
+                )
             )
 
         if not values:
@@ -462,13 +531,17 @@ class ListingCard(QFrame):
             values
         )
 
-    def _build_date_text(self) -> str:
+    def _build_date_text(
+        self,
+    ) -> str:
         original = (
             self.listing.original_created_date
         )
 
-        original_text = original.strftime(
-            "%d %b %Y"
+        original_text = (
+            original.strftime(
+                "%d %b %Y"
+            )
         )
 
         if (
@@ -491,8 +564,10 @@ class ListingCard(QFrame):
                 self.listing.last_relisted_date
             )
 
-            last_relisted = last_date.strftime(
-                "%d %b %Y"
+            last_relisted = (
+                last_date.strftime(
+                    "%d %b %Y"
+                )
             )
 
             days = (
@@ -506,16 +581,18 @@ class ListingCard(QFrame):
 
         return (
             f"Original: {original_text}"
-            f"   |   "
+            "   |   "
             f"Last relisted: {last_relisted}"
-            f"   |   "
+            "   |   "
             f"{age_text}"
-            f"   |   "
-            f"Relisted "
+            "   |   "
+            "Relisted "
             f"{self.listing.number_of_times_relisted} times"
         )
 
-    def _open_photo_folder(self) -> None:
+    def _open_photo_folder(
+        self,
+    ) -> None:
         folder = (
             get_listing_photos_directory(
                 self.listing.id
@@ -535,7 +612,9 @@ class ListingCard(QFrame):
             )
         )
 
-    def _apply_styles(self) -> None:
+    def _apply_styles(
+        self,
+    ) -> None:
         self.setStyleSheet(
             """
             #listingCard {

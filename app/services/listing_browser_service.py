@@ -25,6 +25,7 @@ SORT_LEAST_RELISTED = "least_relisted"
 
 AGE_ALL = "all"
 AGE_NEVER_RELISTED = "never_relisted"
+AGE_14_PLUS = "14_plus"
 AGE_30_PLUS = "30_plus"
 AGE_60_PLUS = "60_plus"
 AGE_90_PLUS = "90_plus"
@@ -80,7 +81,9 @@ def get_listing_browser_result(
         or date.today()
     )
 
-    all_listings = get_all_listings()
+    all_listings = (
+        get_all_listings()
+    )
 
     categories = sorted(
         {
@@ -149,12 +152,28 @@ def _matches_filters(
     )
 
     if search_text:
-        searchable_text = (
-            f"{listing.title} "
-            f"{listing.description}"
+        searchable_values = [
+            listing.title,
+            listing.description,
+            listing.category,
+            listing.subcategory,
+            listing.brand,
+            listing.size,
+            listing.condition,
+            listing.colour,
+            listing.material,
+        ]
+
+        searchable_text = " ".join(
+            str(value)
+            for value in searchable_values
+            if value
         ).casefold()
 
-        if search_text not in searchable_text:
+        if (
+            search_text
+            not in searchable_text
+        ):
             return False
 
     if (
@@ -181,11 +200,11 @@ def _matches_filters(
         listing_category = (
             listing.category
             or ""
-        ).casefold()
+        ).strip().casefold()
 
         if (
             requested_category
-            not in listing_category
+            != listing_category
         ):
             return False
 
@@ -199,11 +218,11 @@ def _matches_filters(
         listing_brand = (
             listing.brand
             or ""
-        ).casefold()
+        ).strip().casefold()
 
         if (
             requested_brand
-            not in listing_brand
+            != listing_brand
         ):
             return False
 
@@ -236,6 +255,19 @@ def _matches_filters(
         if (
             listing.last_relisted_date
             is not None
+        ):
+            return False
+
+    elif (
+        filters.age_filter
+        == AGE_14_PLUS
+    ):
+        if (
+            _days_since_rotation(
+                listing,
+                today,
+            )
+            < 14
         ):
             return False
 
@@ -286,11 +318,8 @@ def _days_since_rotation(
     today: date,
 ) -> int:
     """
-    Age used by the 30+/60+/90+ filters.
-
-    If the listing has been relisted, use the most recent relist date.
-
-    Otherwise use its original listing date.
+    Age since most recent relist, or original creation when
+    the listing has never been relisted.
     """
     reference_date = (
         listing.last_relisted_date
@@ -413,10 +442,8 @@ def _last_relisted_sort_key(
     listing: Listing,
 ) -> tuple:
     """
-    Sort never-relisted items first, then the oldest relisted items.
-
-    This makes the sort useful for identifying listings that have
-    gone longest without refreshing.
+    Never-relisted items first, followed by the oldest
+    relisted items.
     """
     if (
         listing.last_relisted_date
