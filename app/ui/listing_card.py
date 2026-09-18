@@ -211,6 +211,23 @@ class ListingCard(QFrame):
             metadata
         )
 
+        if self.listing.isbn:
+            isbn = QLabel(
+                f"ISBN: {self.listing.isbn}"
+            )
+
+            isbn.setObjectName(
+                "isbnText"
+            )
+
+            isbn.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+
+            details_layout.addWidget(
+                isbn
+            )
+
         dates = QLabel(
             self._build_date_text()
         )
@@ -490,6 +507,11 @@ class ListingCard(QFrame):
                 self.listing.category
             )
 
+        if self.listing.subcategory:
+            values.append(
+                self.listing.subcategory
+            )
+
         if self.listing.brand:
             values.append(
                 (
@@ -701,6 +723,12 @@ class ListingCard(QFrame):
             #metadataText {
                 color: #4b5563;
                 font-size: 13px;
+            }
+
+            #isbnText {
+                color: #374151;
+                font-size: 12px;
+                font-weight: 600;
             }
 
             #dateText {

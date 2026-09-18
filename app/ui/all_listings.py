@@ -118,7 +118,7 @@ class AllListingsPage(QWidget):
             self._create_filter_panel()
         )
 
-        # Filters start CLOSED.
+        # Filters remain closed when the page first opens.
         self.filter_panel.setVisible(
             False
         )
@@ -288,8 +288,8 @@ class AllListingsPage(QWidget):
 
         self.search_input.setPlaceholderText(
             (
-                "Search title, description, brand, "
-                "category, size, colour..."
+                "Search title, ISBN, description, "
+                "brand, category, size, colour..."
             )
         )
 
@@ -405,6 +405,8 @@ class AllListingsPage(QWidget):
         grid.setVerticalSpacing(
             10
         )
+
+        # Row 1 -------------------------------------------------
 
         self.status_filter = (
             QComboBox()
@@ -548,6 +550,8 @@ class AllListingsPage(QWidget):
             self._filter_changed
         )
 
+        # Row 2 -------------------------------------------------
+
         self.category_filter = (
             QComboBox()
         )
@@ -561,6 +565,19 @@ class AllListingsPage(QWidget):
             self._filter_changed
         )
 
+        self.subcategory_filter = (
+            QComboBox()
+        )
+
+        self.subcategory_filter.addItem(
+            "All Subcategories",
+            None,
+        )
+
+        self.subcategory_filter.currentIndexChanged.connect(
+            self._filter_changed
+        )
+
         self.brand_filter = (
             QComboBox()
         )
@@ -571,6 +588,47 @@ class AllListingsPage(QWidget):
         )
 
         self.brand_filter.currentIndexChanged.connect(
+            self._filter_changed
+        )
+
+        self.condition_filter = (
+            QComboBox()
+        )
+
+        self.condition_filter.addItem(
+            "All Conditions",
+            None,
+        )
+
+        self.condition_filter.currentIndexChanged.connect(
+            self._filter_changed
+        )
+
+        # Row 3 -------------------------------------------------
+
+        self.size_filter = (
+            QComboBox()
+        )
+
+        self.size_filter.addItem(
+            "All Sizes",
+            None,
+        )
+
+        self.size_filter.currentIndexChanged.connect(
+            self._filter_changed
+        )
+
+        self.colour_filter = (
+            QComboBox()
+        )
+
+        self.colour_filter.addItem(
+            "All Colours",
+            None,
+        )
+
+        self.colour_filter.currentIndexChanged.connect(
             self._filter_changed
         )
 
@@ -624,6 +682,8 @@ class AllListingsPage(QWidget):
             self._price_filter_changed
         )
 
+        # Layout ------------------------------------------------
+
         self._add_filter_control(
             grid,
             0,
@@ -668,6 +728,14 @@ class AllListingsPage(QWidget):
             grid,
             1,
             1,
+            "Subcategory",
+            self.subcategory_filter,
+        )
+
+        self._add_filter_control(
+            grid,
+            1,
+            2,
             "Brand",
             self.brand_filter,
         )
@@ -675,6 +743,30 @@ class AllListingsPage(QWidget):
         self._add_filter_control(
             grid,
             1,
+            3,
+            "Condition",
+            self.condition_filter,
+        )
+
+        self._add_filter_control(
+            grid,
+            2,
+            0,
+            "Size",
+            self.size_filter,
+        )
+
+        self._add_filter_control(
+            grid,
+            2,
+            1,
+            "Colour",
+            self.colour_filter,
+        )
+
+        self._add_filter_control(
+            grid,
+            2,
             2,
             "Minimum Price",
             self.minimum_price_filter,
@@ -682,7 +774,7 @@ class AllListingsPage(QWidget):
 
         self._add_filter_control(
             grid,
-            1,
+            2,
             3,
             "Maximum Price",
             self.maximum_price_filter,
@@ -892,17 +984,19 @@ class AllListingsPage(QWidget):
         ):
             count += 1
 
-        if (
-            self.category_filter.currentData()
-            is not None
+        for combo in (
+            self.category_filter,
+            self.subcategory_filter,
+            self.brand_filter,
+            self.condition_filter,
+            self.size_filter,
+            self.colour_filter,
         ):
-            count += 1
-
-        if (
-            self.brand_filter.currentData()
-            is not None
-        ):
-            count += 1
+            if (
+                combo.currentData()
+                is not None
+            ):
+                count += 1
 
         if (
             self.minimum_price_filter.value()
@@ -1041,8 +1135,14 @@ class AllListingsPage(QWidget):
             return
 
         self._update_dynamic_filters(
-            result.categories,
-            result.brands,
+            categories=result.categories,
+            subcategories=(
+                result.subcategories
+            ),
+            brands=result.brands,
+            conditions=result.conditions,
+            sizes=result.sizes,
+            colours=result.colours,
         )
 
         page_size = int(
@@ -1256,8 +1356,20 @@ class AllListingsPage(QWidget):
             category=(
                 self.category_filter.currentData()
             ),
+            subcategory=(
+                self.subcategory_filter.currentData()
+            ),
             brand=(
                 self.brand_filter.currentData()
+            ),
+            condition=(
+                self.condition_filter.currentData()
+            ),
+            size=(
+                self.size_filter.currentData()
+            ),
+            colour=(
+                self.colour_filter.currentData()
             ),
             minimum_price=minimum_price,
             maximum_price=maximum_price,
@@ -1268,86 +1380,109 @@ class AllListingsPage(QWidget):
 
     def _update_dynamic_filters(
         self,
+        *,
         categories: list[str],
+        subcategories: list[str],
         brands: list[str],
+        conditions: list[str],
+        sizes: list[str],
+        colours: list[str],
     ) -> None:
-        current_category = (
-            self.category_filter.currentData()
-        )
+        """
+        Refresh dropdown options while preserving current selections.
+        """
+        filter_definitions = [
+            (
+                self.category_filter,
+                "All Categories",
+                categories,
+            ),
+            (
+                self.subcategory_filter,
+                "All Subcategories",
+                subcategories,
+            ),
+            (
+                self.brand_filter,
+                "All Brands",
+                brands,
+            ),
+            (
+                self.condition_filter,
+                "All Conditions",
+                conditions,
+            ),
+            (
+                self.size_filter,
+                "All Sizes",
+                sizes,
+            ),
+            (
+                self.colour_filter,
+                "All Colours",
+                colours,
+            ),
+        ]
 
-        current_brand = (
-            self.brand_filter.currentData()
-        )
+        current_values = {
+            id(combo): combo.currentData()
+            for (
+                combo,
+                _placeholder,
+                _values,
+            ) in filter_definitions
+        }
 
         self._updating_filter_options = True
 
         try:
-            self.category_filter.blockSignals(
-                True
-            )
-
-            self.brand_filter.blockSignals(
-                True
-            )
-
-            self.category_filter.clear()
-
-            self.category_filter.addItem(
-                "All Categories",
-                None,
-            )
-
-            for category in categories:
-                self.category_filter.addItem(
-                    category,
-                    category,
+            for (
+                combo,
+                placeholder,
+                values,
+            ) in filter_definitions:
+                combo.blockSignals(
+                    True
                 )
 
-            if current_category:
-                index = (
-                    self.category_filter.findData(
-                        current_category
-                    )
+                combo.clear()
+
+                combo.addItem(
+                    placeholder,
+                    None,
                 )
 
-                if index >= 0:
-                    self.category_filter.setCurrentIndex(
-                        index
+                for value in values:
+                    combo.addItem(
+                        value,
+                        value,
                     )
 
-            self.brand_filter.clear()
-
-            self.brand_filter.addItem(
-                "All Brands",
-                None,
-            )
-
-            for brand in brands:
-                self.brand_filter.addItem(
-                    brand,
-                    brand,
+                selected_value = (
+                    current_values[
+                        id(combo)
+                    ]
                 )
 
-            if current_brand:
-                index = (
-                    self.brand_filter.findData(
-                        current_brand
+                if selected_value is not None:
+                    index = combo.findData(
+                        selected_value
                     )
-                )
 
-                if index >= 0:
-                    self.brand_filter.setCurrentIndex(
-                        index
-                    )
+                    if index >= 0:
+                        combo.setCurrentIndex(
+                            index
+                        )
 
         finally:
-            self.category_filter.blockSignals(
-                False
-            )
-
-            self.brand_filter.blockSignals(
-                False
-            )
+            for (
+                combo,
+                _placeholder,
+                _values,
+            ) in filter_definitions:
+                combo.blockSignals(
+                    False
+                )
 
             self._updating_filter_options = False
 
@@ -1384,7 +1519,23 @@ class AllListingsPage(QWidget):
                 0
             )
 
+            self.subcategory_filter.setCurrentIndex(
+                0
+            )
+
             self.brand_filter.setCurrentIndex(
+                0
+            )
+
+            self.condition_filter.setCurrentIndex(
+                0
+            )
+
+            self.size_filter.setCurrentIndex(
+                0
+            )
+
+            self.colour_filter.setCurrentIndex(
                 0
             )
 

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.database import session_scope
+from app.database import (
+    session_scope,
+)
 from app.models import (
     Listing,
     ListingPhoto,
@@ -16,6 +20,10 @@ from app.models import (
 
 class ListingNotFoundError(Exception):
     """Raised when a requested listing does not exist."""
+
+
+class InvalidISBNError(ValueError):
+    """Raised when an ISBN is not a valid ISBN-10 or ISBN-13."""
 
 
 @dataclass(slots=True)
@@ -37,6 +45,8 @@ class ListingInput:
     colour: str | None = None
     material: str | None = None
     parcel_size: str | None = None
+
+    isbn: str | None = None
 
     notes: str = ""
 
@@ -65,6 +75,143 @@ def _clean_optional_text(
     )
 
 
+def normalize_isbn(
+    value: str | None,
+) -> str | None:
+    """
+    Normalize and validate an optional ISBN.
+
+    Accepts:
+    - ISBN-10
+    - ISBN-13
+    - spaces
+    - hyphens
+    - ISBN-10 ending in X
+
+    Stored format contains digits only, or X as the final
+    ISBN-10 character.
+    """
+    if value is None:
+        return None
+
+    raw = value.strip()
+
+    if not raw:
+        return None
+
+    normalized = re.sub(
+        r"[\s-]+",
+        "",
+        raw,
+    ).upper()
+
+    if (
+        len(normalized) == 10
+        and _is_valid_isbn10(
+            normalized
+        )
+    ):
+        return normalized
+
+    if (
+        len(normalized) == 13
+        and _is_valid_isbn13(
+            normalized
+        )
+    ):
+        return normalized
+
+    raise InvalidISBNError(
+        (
+            "ISBN must be a valid ISBN-10 "
+            "or ISBN-13."
+        )
+    )
+
+
+def _is_valid_isbn10(
+    value: str,
+) -> bool:
+    if not re.fullmatch(
+        r"\d{9}[\dX]",
+        value,
+    ):
+        return False
+
+    total = 0
+
+    for index, character in enumerate(
+        value
+    ):
+        if (
+            index == 9
+            and character == "X"
+        ):
+            digit = 10
+
+        else:
+            digit = int(
+                character
+            )
+
+        weight = 10 - index
+
+        total += (
+            digit
+            * weight
+        )
+
+    return (
+        total % 11
+        == 0
+    )
+
+
+def _is_valid_isbn13(
+    value: str,
+) -> bool:
+    if not value.isdigit():
+        return False
+
+    if len(value) != 13:
+        return False
+
+    total = 0
+
+    for index, character in enumerate(
+        value[:12]
+    ):
+        digit = int(
+            character
+        )
+
+        multiplier = (
+            1
+            if index % 2 == 0
+            else 3
+        )
+
+        total += (
+            digit
+            * multiplier
+        )
+
+    check_digit = (
+        10
+        - (
+            total
+            % 10
+        )
+    ) % 10
+
+    return (
+        check_digit
+        == int(
+            value[-1]
+        )
+    )
+
+
 def _prepare_input(
     data: ListingInput,
 ) -> ListingInput:
@@ -72,8 +219,12 @@ def _prepare_input(
     Normalize listing form input before storing it.
     """
     return ListingInput(
-        title=data.title.strip(),
-        description=data.description.strip(),
+        title=(
+            data.title.strip()
+        ),
+        description=(
+            data.description.strip()
+        ),
         price=data.price,
         currency=(
             data.currency
@@ -104,7 +255,12 @@ def _prepare_input(
         parcel_size=_clean_optional_text(
             data.parcel_size
         ),
-        notes=data.notes.strip(),
+        isbn=normalize_isbn(
+            data.isbn
+        ),
+        notes=(
+            data.notes.strip()
+        ),
         original_created_date=(
             data.original_created_date
             or date.today()
@@ -137,6 +293,7 @@ def create_listing(
             colour=prepared.colour,
             material=prepared.material,
             parcel_size=prepared.parcel_size,
+            isbn=prepared.isbn,
             notes=prepared.notes,
             original_created_date=(
                 prepared.original_created_date
@@ -150,7 +307,9 @@ def create_listing(
 
         session.flush()
 
-        listing_id = listing.id
+        listing_id = (
+            listing.id
+        )
 
     return listing_id
 
@@ -228,6 +387,10 @@ def update_listing(
             prepared.parcel_size
         )
 
+        listing.isbn = (
+            prepared.isbn
+        )
+
         listing.notes = (
             prepared.notes
         )
@@ -246,8 +409,6 @@ def get_listing(
 ) -> Listing:
     """
     Retrieve one listing by ID.
-
-    The returned object is detached from the database session.
     """
     with session_scope() as session:
         listing = session.get(
@@ -300,12 +461,14 @@ def get_all_listings() -> list[Listing]:
 
 def get_listing_photos_for_listings(
     listing_ids: list[int],
-) -> dict[int, list[ListingPhoto]]:
+) -> dict[
+    int,
+    list[ListingPhoto],
+]:
     """
     Load photos for multiple listings in one database query.
 
-    This avoids one separate database query for every visible
-    ListingCard.
+    This avoids one separate database query for every visible card.
     """
     if not listing_ids:
         return {}

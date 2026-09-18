@@ -16,7 +16,11 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship,
+)
 
 from app.database import Base
 
@@ -116,6 +120,12 @@ class Listing(Base):
     parcel_size: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
+    )
+
+    isbn: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        index=True,
     )
 
     notes: Mapped[str] = mapped_column(
@@ -294,11 +304,6 @@ class DailyQueueEntry(Base):
     Records a listing's participation in a particular day's queue.
 
     A listing can appear at most once per calendar day.
-
-    States:
-        queued
-        completed
-        skipped
     """
 
     __tablename__ = "daily_queue_entries"

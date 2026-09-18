@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import (
+    Qt,
+    Signal,
+)
+from PySide6.QtGui import (
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -13,6 +18,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.models import (
+    ListingPhoto,
+)
+from app.services.listing_service import (
+    get_listing_photos_for_listings,
+)
 from app.services.photo_service import (
     get_listing_photos,
     get_thumbnail_path,
@@ -29,6 +40,13 @@ from app.services.queue_service import (
 
 
 class QueueCard(QFrame):
+    """
+    One listing card in Today's Queue.
+
+    The parent page can supply preloaded photo metadata so the
+    queue does not perform a separate database query per card.
+    """
+
     prepare_requested = Signal(int)
     edit_requested = Signal(int)
     relisted_requested = Signal(int)
@@ -37,12 +55,22 @@ class QueueCard(QFrame):
     def __init__(
         self,
         item: QueueItem,
+        photos: list[ListingPhoto] | None = None,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent)
+        super().__init__(
+            parent
+        )
 
         self.item = item
-        self.listing = item.listing
+
+        self.listing = (
+            item.listing
+        )
+
+        self._preloaded_photos = (
+            photos
+        )
 
         self.setObjectName(
             "queueCard"
@@ -51,8 +79,12 @@ class QueueCard(QFrame):
         self._build_ui()
         self._apply_styles()
 
-    def _build_ui(self) -> None:
-        layout = QHBoxLayout(self)
+    def _build_ui(
+        self,
+    ) -> None:
+        layout = QHBoxLayout(
+            self
+        )
 
         layout.setContentsMargins(
             18,
@@ -65,76 +97,19 @@ class QueueCard(QFrame):
             20
         )
 
-        photo_label = QLabel()
-
-        photo_label.setFixedSize(
-            150,
-            150,
+        photo_label = (
+            self._create_photo_label()
         )
-
-        photo_label.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
-
-        photo_label.setObjectName(
-            "queuePhoto"
-        )
-
-        try:
-            photos = get_listing_photos(
-                self.listing.id
-            )
-
-            cover = next(
-                (
-                    photo
-                    for photo in photos
-                    if photo.is_cover
-                ),
-                photos[0]
-                if photos
-                else None,
-            )
-
-            if cover is None:
-                photo_label.setText(
-                    "No Photo"
-                )
-
-            else:
-                thumbnail = get_thumbnail_path(
-                    cover
-                )
-
-                pixmap = QPixmap(
-                    str(thumbnail)
-                )
-
-                if pixmap.isNull():
-                    photo_label.setText(
-                        "No Preview"
-                    )
-
-                else:
-                    photo_label.setPixmap(
-                        pixmap.scaled(
-                            140,
-                            140,
-                            Qt.AspectRatioMode.KeepAspectRatio,
-                            Qt.TransformationMode.SmoothTransformation,
-                        )
-                    )
-
-        except Exception:
-            photo_label.setText(
-                "Photo Error"
-            )
 
         layout.addWidget(
             photo_label
         )
 
         details = QVBoxLayout()
+
+        details.setSpacing(
+            6
+        )
 
         title_row = QHBoxLayout()
 
@@ -146,7 +121,9 @@ class QueueCard(QFrame):
             "queueTitle"
         )
 
-        title.setWordWrap(True)
+        title.setWordWrap(
+            True
+        )
 
         price = QLabel(
             (
@@ -176,6 +153,7 @@ class QueueCard(QFrame):
             last_relisted = (
                 "Never relisted"
             )
+
         else:
             last_relisted = (
                 "Last relisted: "
@@ -202,6 +180,49 @@ class QueueCard(QFrame):
             information
         )
 
+        if self.listing.category:
+            category_text = (
+                self.listing.category
+            )
+
+            if self.listing.subcategory:
+                category_text += (
+                    " → "
+                    f"{self.listing.subcategory}"
+                )
+
+            category_label = QLabel(
+                category_text
+            )
+
+            category_label.setObjectName(
+                "queueMetadata"
+            )
+
+            details.addWidget(
+                category_label
+            )
+
+        if self.listing.isbn:
+            isbn_label = QLabel(
+                (
+                    "ISBN: "
+                    f"{self.listing.isbn}"
+                )
+            )
+
+            isbn_label.setObjectName(
+                "queueMetadata"
+            )
+
+            isbn_label.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+
+            details.addWidget(
+                isbn_label
+            )
+
         details.addStretch()
 
         layout.addLayout(
@@ -211,6 +232,10 @@ class QueueCard(QFrame):
 
         buttons = QVBoxLayout()
 
+        buttons.setSpacing(
+            8
+        )
+
         prepare_button = QPushButton(
             "PREPARE LISTING"
         )
@@ -219,9 +244,15 @@ class QueueCard(QFrame):
             "primaryQueueButton"
         )
 
+        prepare_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
         prepare_button.clicked.connect(
-            lambda: self.prepare_requested.emit(
-                self.listing.id
+            lambda: (
+                self.prepare_requested.emit(
+                    self.listing.id
+                )
             )
         )
 
@@ -233,9 +264,15 @@ class QueueCard(QFrame):
             "secondaryQueueButton"
         )
 
+        edit_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
         edit_button.clicked.connect(
-            lambda: self.edit_requested.emit(
-                self.listing.id
+            lambda: (
+                self.edit_requested.emit(
+                    self.listing.id
+                )
             )
         )
 
@@ -247,9 +284,15 @@ class QueueCard(QFrame):
             "secondaryQueueButton"
         )
 
+        relisted_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
         relisted_button.clicked.connect(
-            lambda: self.relisted_requested.emit(
-                self.listing.id
+            lambda: (
+                self.relisted_requested.emit(
+                    self.listing.id
+                )
             )
         )
 
@@ -261,9 +304,15 @@ class QueueCard(QFrame):
             "secondaryQueueButton"
         )
 
+        skip_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
         skip_button.clicked.connect(
-            lambda: self.skip_requested.emit(
-                self.listing.id
+            lambda: (
+                self.skip_requested.emit(
+                    self.listing.id
+                )
             )
         )
 
@@ -289,7 +338,110 @@ class QueueCard(QFrame):
             buttons
         )
 
-    def _apply_styles(self) -> None:
+    def _create_photo_label(
+        self,
+    ) -> QLabel:
+        """
+        Create the queue thumbnail.
+
+        When the parent supplied photos, no database call is
+        required here.
+        """
+        photo_label = QLabel()
+
+        photo_label.setFixedSize(
+            150,
+            150,
+        )
+
+        photo_label.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+
+        photo_label.setObjectName(
+            "queuePhoto"
+        )
+
+        try:
+            if (
+                self._preloaded_photos
+                is None
+            ):
+                photos = (
+                    get_listing_photos(
+                        self.listing.id
+                    )
+                )
+
+            else:
+                photos = (
+                    self._preloaded_photos
+                )
+
+            cover = next(
+                (
+                    photo
+                    for photo in photos
+                    if photo.is_cover
+                ),
+                (
+                    photos[0]
+                    if photos
+                    else None
+                ),
+            )
+
+            if cover is None:
+                photo_label.setText(
+                    "No Photo"
+                )
+
+                return photo_label
+
+            thumbnail = (
+                get_thumbnail_path(
+                    cover
+                )
+            )
+
+            pixmap = QPixmap(
+                str(
+                    thumbnail
+                )
+            )
+
+            if pixmap.isNull():
+                photo_label.setText(
+                    "No Preview"
+                )
+
+                return photo_label
+
+            if (
+                pixmap.width() > 140
+                or pixmap.height() > 140
+            ):
+                pixmap = pixmap.scaled(
+                    140,
+                    140,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+
+            photo_label.setPixmap(
+                pixmap
+            )
+
+        except Exception:
+            photo_label.setText(
+                "Photo Error"
+            )
+
+        return photo_label
+
+    def _apply_styles(
+        self,
+    ) -> None:
         self.setStyleSheet(
             """
             #queueCard {
@@ -315,6 +467,12 @@ class QueueCard(QFrame):
             #queueDetails {
                 color: #4b5563;
                 font-size: 13px;
+            }
+
+            #queueMetadata {
+                color: #6b7280;
+                font-size: 12px;
+                font-weight: 600;
             }
 
             #primaryQueueButton {
@@ -349,6 +507,10 @@ class QueueCard(QFrame):
 
 
 class DailyQueuePage(QWidget):
+    """
+    Today's automatically generated manual relisting queue.
+    """
+
     prepare_requested = Signal(int)
     edit_requested = Signal(int)
     queue_changed = Signal()
@@ -357,7 +519,9 @@ class DailyQueuePage(QWidget):
         self,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent)
+        super().__init__(
+            parent
+        )
 
         self.daily_limit = (
             DAILY_RELIST_LIMIT
@@ -369,8 +533,12 @@ class DailyQueuePage(QWidget):
 
         self._build_ui()
 
-    def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
+    def _build_ui(
+        self,
+    ) -> None:
+        layout = QVBoxLayout(
+            self
+        )
 
         layout.setContentsMargins(
             0,
@@ -406,8 +574,20 @@ class DailyQueuePage(QWidget):
             )
         )
 
+        self.rule_label.setObjectName(
+            "queueRule"
+        )
+
         refresh_button = QPushButton(
             "REFRESH"
+        )
+
+        refresh_button.setObjectName(
+            "queueRefreshButton"
+        )
+
+        refresh_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
         )
 
         refresh_button.clicked.connect(
@@ -442,11 +622,17 @@ class DailyQueuePage(QWidget):
             True
         )
 
+        self.message_label.setObjectName(
+            "queueMessage"
+        )
+
         layout.addWidget(
             self.message_label
         )
 
-        self.scroll_area = QScrollArea()
+        self.scroll_area = (
+            QScrollArea()
+        )
 
         self.scroll_area.setWidgetResizable(
             True
@@ -454,6 +640,10 @@ class DailyQueuePage(QWidget):
 
         self.scroll_area.setFrameShape(
             QFrame.Shape.NoFrame
+        )
+
+        self.scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
 
         self.container = QWidget()
@@ -484,11 +674,22 @@ class DailyQueuePage(QWidget):
             1,
         )
 
+        self._apply_page_styles()
+
         self.refresh()
 
-    def refresh(self) -> None:
-        self._clear_cards()
+    def refresh(
+        self,
+    ) -> None:
+        """
+        Refresh today's queue.
 
+        Queue data is loaded first so the existing cards stay visible
+        until replacement data is ready.
+
+        Photo metadata for every queue listing is then fetched with
+        one batch query rather than one database query per card.
+        """
         try:
             snapshot = get_today_queue(
                 configured_limit=(
@@ -518,6 +719,13 @@ class DailyQueuePage(QWidget):
             )
         )
 
+        self.rule_label.setText(
+            (
+                "Minimum age: "
+                f"{self.minimum_age_days} days"
+            )
+        )
+
         if snapshot.is_complete:
             self.message_label.setText(
                 (
@@ -527,24 +735,77 @@ class DailyQueuePage(QWidget):
                 )
             )
 
-            self._show_empty_message(
-                "Today's relisting queue is complete."
+            self.container.setUpdatesEnabled(
+                False
             )
+
+            try:
+                self._clear_cards()
+
+                self._show_empty_message(
+                    (
+                        "Today's relisting queue "
+                        "is complete."
+                    )
+                )
+
+            finally:
+                self.container.setUpdatesEnabled(
+                    True
+                )
+
+                self.container.update()
 
             return
 
         if not snapshot.queued_items:
             self.message_label.setText(
                 (
-                    "There are currently no eligible listings."
+                    "There are currently no "
+                    "eligible listings."
                 )
             )
 
-            self._show_empty_message(
-                "No eligible listings are available today."
+            self.container.setUpdatesEnabled(
+                False
             )
 
+            try:
+                self._clear_cards()
+
+                self._show_empty_message(
+                    (
+                        "No eligible listings "
+                        "are available today."
+                    )
+                )
+
+            finally:
+                self.container.setUpdatesEnabled(
+                    True
+                )
+
+                self.container.update()
+
             return
+
+        listing_ids = [
+            item.listing.id
+            for item in snapshot.queued_items
+        ]
+
+        try:
+            photos_by_listing = (
+                get_listing_photos_for_listings(
+                    listing_ids
+                )
+            )
+
+        except Exception:
+            # Photo metadata should not prevent the queue itself
+            # from working. Cards can fall back to their normal
+            # per-listing lookup if the batch query fails.
+            photos_by_listing = None
 
         self.message_label.setText(
             (
@@ -553,33 +814,59 @@ class DailyQueuePage(QWidget):
             )
         )
 
-        for index, item in enumerate(
-            snapshot.queued_items
-        ):
-            card = QueueCard(
-                item
+        self.container.setUpdatesEnabled(
+            False
+        )
+
+        try:
+            self._clear_cards()
+
+            for index, item in enumerate(
+                snapshot.queued_items
+            ):
+                if photos_by_listing is None:
+                    photos = None
+
+                else:
+                    photos = (
+                        photos_by_listing.get(
+                            item.listing.id,
+                            [],
+                        )
+                    )
+
+                card = QueueCard(
+                    item=item,
+                    photos=photos,
+                )
+
+                card.prepare_requested.connect(
+                    self.prepare_requested.emit
+                )
+
+                card.edit_requested.connect(
+                    self.edit_requested.emit
+                )
+
+                card.skip_requested.connect(
+                    self._skip_listing
+                )
+
+                card.relisted_requested.connect(
+                    self._mark_relisted
+                )
+
+                self.cards_layout.insertWidget(
+                    index,
+                    card,
+                )
+
+        finally:
+            self.container.setUpdatesEnabled(
+                True
             )
 
-            card.prepare_requested.connect(
-                self.prepare_requested.emit
-            )
-
-            card.edit_requested.connect(
-                self.edit_requested.emit
-            )
-
-            card.skip_requested.connect(
-                self._skip_listing
-            )
-
-            card.relisted_requested.connect(
-                self._mark_relisted
-            )
-
-            self.cards_layout.insertWidget(
-                index,
-                card,
-            )
+            self.container.update()
 
     def _skip_listing(
         self,
@@ -687,7 +974,10 @@ class DailyQueuePage(QWidget):
         QMessageBox.information(
             self,
             "Relisting Recorded",
-            "Relisting recorded successfully.",
+            (
+                "Relisting recorded "
+                "successfully."
+            ),
         )
 
         self.refresh()
@@ -700,6 +990,10 @@ class DailyQueuePage(QWidget):
     ) -> None:
         label = QLabel(
             text
+        )
+
+        label.setObjectName(
+            "queueEmptyState"
         )
 
         label.setAlignment(
@@ -715,16 +1009,67 @@ class DailyQueuePage(QWidget):
             label,
         )
 
-    def _clear_cards(self) -> None:
+    def _clear_cards(
+        self,
+    ) -> None:
         while (
             self.cards_layout.count()
             > 1
         ):
-            item = self.cards_layout.takeAt(
-                0
+            item = (
+                self.cards_layout.takeAt(
+                    0
+                )
             )
 
             widget = item.widget()
 
             if widget is not None:
                 widget.deleteLater()
+
+    def _apply_page_styles(
+        self,
+    ) -> None:
+        self.setStyleSheet(
+            self.styleSheet()
+            + """
+            #queueHeader {
+                background-color: white;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+            }
+
+            #queueProgress {
+                color: #111827;
+                font-weight: 700;
+            }
+
+            #queueRule,
+            #queueMessage {
+                color: #6b7280;
+                font-size: 13px;
+            }
+
+            #queueRefreshButton {
+                background-color: white;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                padding: 8px 14px;
+                font-weight: 600;
+            }
+
+            #queueRefreshButton:hover {
+                background-color: #f3f4f6;
+            }
+
+            #queueEmptyState {
+                background-color: white;
+                color: #6b7280;
+                border: 1px solid #e5e7eb;
+                border-radius: 10px;
+                padding: 35px;
+                font-size: 15px;
+            }
+            """
+        )
