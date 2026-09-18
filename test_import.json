@@ -1,0 +1,27 @@
+[
+  {
+    "title": "Imported Black Handbag",
+    "description": "Testing JSON bulk import.",
+    "price": 12.00,
+    "currency": "EUR",
+    "category": "Women > Bags",
+    "brand": "Unknown",
+    "condition": "Very good",
+    "colour": "Black",
+    "original_created_date": "2026-01-12",
+    "priority": "Normal"
+  },
+  {
+    "title": "Imported Cardigan",
+    "description": "Second bulk import test.",
+    "price": 8.50,
+    "currency": "EUR",
+    "category": "Women > Clothing",
+    "size": "M",
+    "condition": "Good",
+    "original_created_date": "2026-03-20",
+    "last_relisted_date": "2026-07-01",
+    "number_of_times_relisted": 2,
+    "priority": "High"
+  }
+]

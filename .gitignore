@@ -1,0 +1,49 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Tests / tools
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Personal application data
+data/
+backups/
+logs/
+
+# Persistent user data must NEVER be committed
+*.sqlite
+*.sqlite3
+*.db
+settings.json
+
+# User photos
+*.webp
+
+# PyInstaller output
+build/
+dist/
+
+# Temporary/export files
+*.zip
+*.tmp
+*.temp
+*.bak
+
+# Environment files
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
