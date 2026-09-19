@@ -95,8 +95,9 @@ def import_vinted_export(
     - Vinted listings ZIP export
     - extracted Vinted listings/index.html
 
-    Existing imports are detected through the Vinted item ID
-    stored in the listing notes.
+    Existing items are detected conservatively using stored Vinted
+    IDs, unique exact-title relist matching, and stable title/detail
+    signatures. Existing local listing fields are not overwritten.
     """
     source_path = Path(
         source

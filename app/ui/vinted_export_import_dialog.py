@@ -72,11 +72,9 @@ class VintedExportImportDialog(QDialog):
     """
     Safe incremental importer for a Vinted personal-data export.
 
-    Existing Vinted item IDs are skipped automatically by the
-    Vinted export service.
-
-    This dialog deliberately uses add-new-only behaviour.
-    Existing local listings are never overwritten.
+    Existing Vinted item IDs are skipped automatically. Relisted
+    items with new IDs and conservative exact-detail duplicates are
+    matched without overwriting existing local listing fields.
     """
 
     import_completed = Signal(int)
@@ -198,13 +196,13 @@ class VintedExportImportDialog(QDialog):
 
         safety_text = QLabel(
             (
-                "? Existing Vinted item IDs are skipped automatically.\n"
-                "? Relisted items with new Vinted IDs can be matched automatically.\n"
-                "? Price changes do not prevent a relisted item from matching.\n"
-                "? Exact title/details duplicates are skipped safely.\n"
-                "? Existing categories, ISBNs, notes, priorities and edits "
+                "- Existing Vinted item IDs are skipped automatically.\n"
+                "- Relisted items with new Vinted IDs can be matched automatically.\n"
+                "- Price changes do not prevent a relisted item from matching.\n"
+                "- Exact title/details duplicates are matched conservatively.\n"
+                "- Existing categories, ISBNs, notes, priorities and edits "
                 "are not overwritten.\n"
-                "? A safety backup is created before importing."
+                "- A safety backup is created before importing."
             )
         )
 
@@ -352,7 +350,7 @@ class VintedExportImportDialog(QDialog):
 
         self.result_output.setPlaceholderText(
             (
-                "After the import, the number of new and skipped "
+                "After the import, the number of new, matched and skipped "
                 "listings will appear here."
             )
         )
@@ -650,7 +648,7 @@ class VintedExportImportDialog(QDialog):
                 f"{result.imported}"
             ),
             (
-                "Existing / duplicate skipped: "
+                "Existing / duplicate handled: "
                 f"{result.skipped_existing}"
             ),
             (
@@ -731,7 +729,7 @@ class VintedExportImportDialog(QDialog):
             title="Vinted Import Complete",
             message=(
                 f"New listings imported: {result.imported}\n"
-                f"Existing / duplicate skipped: {result.skipped_existing}\n"
+                f"Existing / duplicate handled: {result.skipped_existing}\n"
                 f"Relisted matched by title: {result.relisted_matched}\n"
                 f"Exact duplicates matched: {exact_duplicate_matches}\n"
                 f"Photos imported: {result.photos_imported}\n"

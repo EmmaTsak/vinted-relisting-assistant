@@ -755,7 +755,7 @@ class ImportListingsDialog(QDialog):
 
         self.status_label.setText(
             (
-                "Finished ? "
+                "Finished — "
                 f"{result.imported_count} listing(s) imported, "
                 f"{result.skipped_count} skipped."
             )
