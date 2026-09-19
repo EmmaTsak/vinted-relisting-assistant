@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -29,6 +28,12 @@ from app.services.lifecycle_service import (
 )
 from app.services.listing_service import (
     get_listing,
+)
+from app.ui.components.dialogs.error_feedback import (
+    show_logged_error,
+)
+from app.ui.components.dialogs.message_dialog import (
+    BrandedMessageDialog,
 )
 
 
@@ -866,10 +871,16 @@ class ListingLifecycleDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Pause Failed",
-                str(exc),
+                title="Pause Failed",
+                message=(
+                    "The listing could not be paused."
+                ),
+                context=(
+                    f"Unable to pause listing {self.listing_id}"
+                ),
+                exception=exc,
             )
 
             return
@@ -884,10 +895,10 @@ class ListingLifecycleDialog(QDialog):
                 f"Listing paused for {days} days."
             )
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Listing Paused",
-            text,
+            title="Listing Paused",
+            message=text,
         )
 
         self.listing_changed.emit(
@@ -905,18 +916,26 @@ class ListingLifecycleDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Restore Failed",
-                str(exc),
+                title="Restore Failed",
+                message=(
+                    "The listing could not be restored."
+                ),
+                context=(
+                    f"Unable to restore listing {self.listing_id}"
+                ),
+                exception=exc,
             )
 
             return
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Listing Restored",
-            "The listing is active again.",
+            title="Listing Restored",
+            message=(
+                "The listing is active again."
+            ),
         )
 
         self.listing_changed.emit(
@@ -936,10 +955,17 @@ class ListingLifecycleDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Update Failed",
-                str(exc),
+                title="Update Failed",
+                message=(
+                    "The queue setting could not be updated."
+                ),
+                context=(
+                    "Unable to update queue exclusion for "
+                    f"listing {self.listing_id}"
+                ),
+                exception=exc,
             )
 
             return
@@ -956,10 +982,10 @@ class ListingLifecycleDialog(QDialog):
                 "for relisting again."
             )
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Queue Setting Updated",
-            message,
+            title="Queue Setting Updated",
+            message=message,
         )
 
         self.listing_changed.emit(
@@ -971,25 +997,18 @@ class ListingLifecycleDialog(QDialog):
     def _mark_sold(
         self,
     ) -> None:
-        answer = QMessageBox.question(
+        confirmed = BrandedMessageDialog.ask(
             self,
-            "Mark as Sold",
-            (
-                "Mark this listing as sold?\n\n"
-                "It will leave the relisting rotation, "
-                "but its information and photos will be kept."
+            title="Mark as Sold?",
+            message=(
+                "This listing will leave the relisting rotation, "
+                "but its information and photos will stay stored."
             ),
-            (
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.Cancel
-            ),
-            QMessageBox.StandardButton.Cancel,
+            confirm_text="MARK SOLD",
+            cancel_text="CANCEL",
         )
 
-        if (
-            answer
-            != QMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
         try:
@@ -998,10 +1017,16 @@ class ListingLifecycleDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Unable to Mark Sold",
-                str(exc),
+                title="Unable to Mark Sold",
+                message=(
+                    "The listing could not be marked as sold."
+                ),
+                context=(
+                    f"Unable to mark listing {self.listing_id} sold"
+                ),
+                exception=exc,
             )
 
             return
@@ -1015,25 +1040,19 @@ class ListingLifecycleDialog(QDialog):
     def _archive(
         self,
     ) -> None:
-        answer = QMessageBox.question(
+        confirmed = BrandedMessageDialog.ask(
             self,
-            "Archive Listing",
-            (
-                "Archive this listing?\n\n"
-                "The listing and all stored photos will "
-                "remain on your computer."
+            title="Archive Listing?",
+            message=(
+                "The listing will leave the active relisting "
+                "rotation, but its information and stored photos "
+                "will remain on your computer."
             ),
-            (
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.Cancel
-            ),
-            QMessageBox.StandardButton.Cancel,
+            confirm_text="ARCHIVE",
+            cancel_text="CANCEL",
         )
 
-        if (
-            answer
-            != QMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
         try:
@@ -1042,10 +1061,16 @@ class ListingLifecycleDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Archive Failed",
-                str(exc),
+                title="Archive Failed",
+                message=(
+                    "The listing could not be archived."
+                ),
+                context=(
+                    f"Unable to archive listing {self.listing_id}"
+                ),
+                exception=exc,
             )
 
             return
@@ -1059,27 +1084,23 @@ class ListingLifecycleDialog(QDialog):
     def _delete_permanently(
         self,
     ) -> None:
-        answer = QMessageBox.warning(
-            self,
-            "Delete this listing permanently?",
-            (
-                "Delete this listing permanently?\n\n"
-                "This will permanently remove the listing "
-                "from the assistant, including its stored "
-                "photos and relisting history.\n\n"
+        confirmation = BrandedMessageDialog(
+            parent=self,
+            title="Delete Permanently?",
+            message=(
+                "This will permanently remove the listing, "
+                "its stored photos and its relisting history.\n\n"
                 "This cannot be undone."
             ),
-            (
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.Cancel
-            ),
-            QMessageBox.StandardButton.Cancel,
+            confirm_text="DELETE",
+            cancel_text="CANCEL",
+            confirm_object_name="destructiveButton",
+            default_to_cancel=True,
         )
 
-        if (
-            answer
-            != QMessageBox.StandardButton.Yes
-        ):
+        confirmation.exec()
+
+        if not confirmation.confirmed:
             return
 
         try:
@@ -1088,10 +1109,17 @@ class ListingLifecycleDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Delete Failed",
-                str(exc),
+                title="Delete Failed",
+                message=(
+                    "The listing could not be permanently deleted."
+                ),
+                context=(
+                    f"Unable to permanently delete listing "
+                    f"{self.listing_id}"
+                ),
+                exception=exc,
             )
 
             return
@@ -1100,12 +1128,11 @@ class ListingLifecycleDialog(QDialog):
             self.listing_id
         )
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Listing Deleted",
-            (
-                "The archived listing was "
-                "permanently deleted."
+            title="Listing Deleted",
+            message=(
+                "The archived listing was permanently deleted."
             ),
         )
 

@@ -28,7 +28,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QTextEdit,
@@ -1386,10 +1385,12 @@ class ListingDialog(QDialog):
             )
 
         except ListingNotFoundError as exc:
-            QMessageBox.critical(
+            BrandedMessageDialog.error(
                 self,
-                "Listing Not Found",
-                str(exc),
+                title="Listing Not Found",
+                message=(
+                    "This listing could not be found."
+                ),
             )
 
             self.reject()
@@ -1482,10 +1483,12 @@ class ListingDialog(QDialog):
             .text()
             .strip()
         ):
-            QMessageBox.warning(
+            BrandedMessageDialog.warning(
                 self,
-                "Missing Title",
-                "Please enter a listing title.",
+                title="Missing Title",
+                message=(
+                    "Please enter a listing title."
+                ),
             )
 
             return False
@@ -1494,12 +1497,11 @@ class ListingDialog(QDialog):
             self.price_input.value()
             <= 0
         ):
-            QMessageBox.warning(
+            BrandedMessageDialog.warning(
                 self,
-                "Invalid Price",
-                (
-                    "Please enter a price "
-                    "greater than €0.00."
+                title="Invalid Price",
+                message=(
+                    "Please enter a price greater than ?0.00."
                 ),
             )
 
@@ -1515,12 +1517,11 @@ class ListingDialog(QDialog):
         if len(
             currency
         ) != 3:
-            QMessageBox.warning(
+            BrandedMessageDialog.warning(
                 self,
-                "Invalid Currency",
-                (
-                    "Currency must use a "
-                    "three-letter code such as EUR."
+                title="Invalid Currency",
+                message=(
+                    "Use a three-letter code such as EUR."
                 ),
             )
 

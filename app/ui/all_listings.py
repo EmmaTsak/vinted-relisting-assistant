@@ -50,6 +50,9 @@ from app.services.listing_service import (
 from app.ui.listing_card import (
     ListingCard,
 )
+from app.ui.components.states.empty_state import (
+    FriendlyEmptyState,
+)
 
 
 from PySide6.QtGui import (
@@ -1257,24 +1260,26 @@ class AllListingsPage(QWidget):
                     result.total_count
                     == 0
                 ):
-                    message = (
-                        "No listings have been stored yet.\n\n"
-                        "Use Add Listing or Import CSV / JSON "
-                        "to add your inventory."
+                    self._show_empty_state(
+                        title="No Listings Yet",
+                        message=(
+                            "Your local inventory is empty. "
+                            "Add a listing manually or import "
+                            "your Vinted data to get started."
+                        ),
                     )
 
                 else:
-                    message = (
-                        "No listings match the current "
-                        "search and filters.\n\n"
-                        "Try changing or resetting "
-                        "the filters."
+                    self._show_empty_state(
+                        title="No Matches Found",
+                        message=(
+                            "No listings match the current "
+                            "search or filters. Reset them to "
+                            "show your inventory again."
+                        ),
+                        action_text="RESET FILTERS",
+                        action=self._reset_filters,
                     )
-
-                self._show_message(
-                    message,
-                    object_name="emptyState",
-                )
 
                 return
 
@@ -1569,6 +1574,39 @@ class AllListingsPage(QWidget):
 
         self.refresh()
 
+    def _show_empty_state(
+        self,
+        *,
+        title: str,
+        message: str,
+        action_text: str | None = None,
+        action=None,
+    ) -> None:
+        empty_state = FriendlyEmptyState(
+            title=title,
+            message=message,
+            action_text=action_text,
+            action=action,
+            parent=self.container,
+        )
+
+        # All Listings lives inside a scroll area. Without an
+        # explicit minimum, the cards layout can compress this
+        # state enough to clip its message above the action button.
+        empty_state.setMinimumHeight(
+            320
+        )
+
+        empty_state.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Minimum,
+        )
+
+        self.cards_layout.insertWidget(
+            0,
+            empty_state,
+        )
+
     def _show_message(
         self,
         text: str,
@@ -1725,15 +1763,6 @@ class AllListingsPage(QWidget):
                 color: #4b5563;
                 font-size: 13px;
                 font-weight: 600;
-            }
-
-            #emptyState {
-                background-color: white;
-                color: #6b7280;
-                border: 1px solid #e5e7eb;
-                border-radius: 10px;
-                padding: 35px;
-                font-size: 15px;
             }
 
             #errorState {

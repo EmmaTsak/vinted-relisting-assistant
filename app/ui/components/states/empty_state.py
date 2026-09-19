@@ -29,6 +29,7 @@ class FriendlyEmptyState(QFrame):
         message: str,
         action_text: str | None = None,
         action: Callable[[], None] | None = None,
+        show_icon: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(
@@ -36,11 +37,11 @@ class FriendlyEmptyState(QFrame):
         )
 
         self.setObjectName(
-            "emptyState"
+            "friendlyEmptyState"
         )
 
         self.setMinimumHeight(
-            260
+            220
         )
 
         self._build_ui(
@@ -48,6 +49,7 @@ class FriendlyEmptyState(QFrame):
             message=message,
             action_text=action_text,
             action=action,
+            show_icon=show_icon,
         )
 
     def _build_ui(
@@ -56,20 +58,21 @@ class FriendlyEmptyState(QFrame):
         message: str,
         action_text: str | None,
         action: Callable[[], None] | None,
+        show_icon: bool,
     ) -> None:
         layout = QVBoxLayout(
             self
         )
 
         layout.setContentsMargins(
-            40,
             32,
-            40,
+            20,
             32,
+            20,
         )
 
         layout.setSpacing(
-            10
+            8
         )
 
         layout.setAlignment(
@@ -77,46 +80,47 @@ class FriendlyEmptyState(QFrame):
         )
 
         # -------------------------------------------------
-        # Illustration
+        # Optional illustration
         # -------------------------------------------------
 
-        icon_label = QLabel()
+        if show_icon:
+            icon_label = QLabel()
 
-        icon_label.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
+            icon_label.setAlignment(
+                Qt.AlignmentFlag.AlignCenter
+            )
 
-        icon_label.setFixedSize(
-            90,
-            90,
-        )
+            icon_label.setFixedSize(
+                70,
+                70,
+            )
 
-        icon_label.setObjectName(
-            "emptyStateIllustration"
-        )
+            icon_label.setObjectName(
+                "emptyStateIllustration"
+            )
 
-        app = QApplication.instance()
+            app = QApplication.instance()
 
-        if app is not None:
-            icon = app.windowIcon()
+            if app is not None:
+                icon = app.windowIcon()
 
-            if not icon.isNull():
-                icon_label.setPixmap(
-                    icon.pixmap(
-                        82,
-                        82,
+                if not icon.isNull():
+                    icon_label.setPixmap(
+                        icon.pixmap(
+                            64,
+                            64,
+                        )
                     )
-                )
 
-        layout.addWidget(
-            icon_label,
-            0,
-            Qt.AlignmentFlag.AlignHCenter,
-        )
+            layout.addWidget(
+                icon_label,
+                0,
+                Qt.AlignmentFlag.AlignHCenter,
+            )
 
-        layout.addSpacing(
-            4
-        )
+            layout.addSpacing(
+                2
+            )
 
         # -------------------------------------------------
         # Copy
@@ -159,7 +163,7 @@ class FriendlyEmptyState(QFrame):
         )
 
         message_label.setMaximumWidth(
-            500
+            460
         )
 
         layout.addWidget(
@@ -177,7 +181,7 @@ class FriendlyEmptyState(QFrame):
             and action is not None
         ):
             layout.addSpacing(
-                8
+                4
             )
 
             button = QPushButton(

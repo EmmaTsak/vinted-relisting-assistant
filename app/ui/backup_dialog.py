@@ -14,10 +14,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
+)
+
+from app.ui.components.states.empty_state import (
+    FriendlyEmptyState,
 )
 
 from app.services.backup_service import (
@@ -26,6 +29,12 @@ from app.services.backup_service import (
     delete_backup,
     list_backups,
     restore_backup,
+)
+from app.ui.components.dialogs.error_feedback import (
+    show_logged_error,
+)
+from app.ui.components.dialogs.message_dialog import (
+    BrandedMessageDialog,
 )
 
 
@@ -171,6 +180,28 @@ class BackupRestoreDialog(QDialog):
             1,
         )
 
+        self.backup_empty_state = FriendlyEmptyState(
+            title="No Backups Yet",
+            message=(
+                "Create your first safety backup so your "
+                "listings, settings and managed photos can "
+                "be restored if you ever need them."
+            ),
+            action_text="CREATE BACKUP",
+            action=self._create_backup,
+            show_icon=True,
+            parent=self,
+        )
+
+        self.backup_empty_state.setVisible(
+            False
+        )
+
+        layout.addWidget(
+            self.backup_empty_state,
+            1,
+        )
+
         self.details_label = QLabel(
             "Select a backup to see its details."
         )
@@ -266,6 +297,18 @@ class BackupRestoreDialog(QDialog):
     def refresh(self) -> None:
         self.backup_list.clear()
 
+        self.backup_list.setVisible(
+            True
+        )
+
+        self.backup_empty_state.setVisible(
+            False
+        )
+
+        self.details_label.setVisible(
+            True
+        )
+
         self.details_label.setText(
             "Select a backup to see its details."
         )
@@ -280,10 +323,16 @@ class BackupRestoreDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Unable to Load Backups",
-                str(exc),
+                title="Unable to Load Backups",
+                message=(
+                    "The backup list could not be loaded."
+                ),
+                context=(
+                    "Unable to load backup list"
+                ),
+                exception=exc,
             )
 
             self.backups = []
@@ -291,16 +340,16 @@ class BackupRestoreDialog(QDialog):
             return
 
         if not self.backups:
-            item = QListWidgetItem(
-                "No backups have been created yet."
+            self.backup_list.setVisible(
+                False
             )
 
-            item.setFlags(
-                Qt.ItemFlag.NoItemFlags
+            self.details_label.setVisible(
+                False
             )
 
-            self.backup_list.addItem(
-                item
+            self.backup_empty_state.setVisible(
+                True
             )
 
             return
@@ -428,10 +477,16 @@ class BackupRestoreDialog(QDialog):
             backup = create_backup()
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Backup Failed",
-                str(exc),
+                title="Backup Failed",
+                message=(
+                    "The backup could not be created."
+                ),
+                context=(
+                    "Unable to create backup"
+                ),
+                exception=exc,
             )
 
             return
@@ -449,10 +504,11 @@ class BackupRestoreDialog(QDialog):
                 f"{len(backup.warnings)}"
             )
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Backup Created",
-            message,
+            title="Backup Created",
+            message=message,
+            button_text="OK",
         )
 
         self.refresh()
@@ -465,30 +521,21 @@ class BackupRestoreDialog(QDialog):
         if backup is None:
             return
 
-        answer = QMessageBox.warning(
+        confirmed = BrandedMessageDialog.ask(
             self,
-            "Restore Backup?",
-            (
-                "Restore the selected backup?\n\n"
-                "This will replace the current SQLite "
-                "database and application settings with "
-                "the selected backup.\n\n"
-                "Managed photos from the backup will be "
-                "restored to their recorded locations.\n\n"
-                "A complete safety backup of your CURRENT "
-                "state will be created automatically first."
+            title="Restore Backup?",
+            message=(
+                "This will replace your current database "
+                "and settings with the selected backup.\n\n"
+                "Your managed photos will also be restored. "
+                "A safety backup of your current state will "
+                "be created automatically first."
             ),
-            (
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.Cancel
-            ),
-            QMessageBox.StandardButton.Cancel,
+            confirm_text="RESTORE",
+            cancel_text="CANCEL",
         )
 
-        if (
-            answer
-            != QMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
         try:
@@ -497,10 +544,16 @@ class BackupRestoreDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Restore Failed",
-                str(exc),
+                title="Restore Failed",
+                message=(
+                    "The selected backup could not be restored."
+                ),
+                context=(
+                    f"Unable to restore backup: {backup.path}"
+                ),
+                exception=exc,
             )
 
             return
@@ -519,10 +572,11 @@ class BackupRestoreDialog(QDialog):
                 f"{len(result.warnings)}"
             )
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Restore Complete",
-            message,
+            title="Restore Complete",
+            message=message,
+            button_text="OK",
         )
 
         self.restore_completed.emit()
@@ -537,26 +591,24 @@ class BackupRestoreDialog(QDialog):
         if backup is None:
             return
 
-        answer = QMessageBox.warning(
-            self,
-            "Delete Backup?",
-            (
+        confirmation = BrandedMessageDialog(
+            parent=self,
+            title="Delete Backup?",
+            message=(
                 "Permanently delete this backup?\n\n"
                 f"{backup.path}\n\n"
-                "This does not delete your current "
-                "application database or listings."
+                "Your current listings and application "
+                "database will not be deleted."
             ),
-            (
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.Cancel
-            ),
-            QMessageBox.StandardButton.Cancel,
+            confirm_text="DELETE",
+            cancel_text="CANCEL",
+            confirm_object_name="destructiveButton",
+            default_to_cancel=True,
         )
 
-        if (
-            answer
-            != QMessageBox.StandardButton.Yes
-        ):
+        confirmation.exec()
+
+        if not confirmation.confirmed:
             return
 
         try:
@@ -565,10 +617,16 @@ class BackupRestoreDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Delete Failed",
-                str(exc),
+                title="Delete Failed",
+                message=(
+                    "The selected backup could not be deleted."
+                ),
+                context=(
+                    f"Unable to delete backup: {backup.path}"
+                ),
+                exception=exc,
             )
 
             return

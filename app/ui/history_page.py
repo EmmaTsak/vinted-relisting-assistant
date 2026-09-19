@@ -643,13 +643,20 @@ class HistoryPage(QWidget):
         if not records:
             empty = FriendlyEmptyState(
                 title=(
-                    "Your relisting story starts here"
+                    "No Relisting History Yet"
                 ),
                 message=(
                     "Once you manually relist an item and confirm "
-                    "MARK RELISTED, its little history trail will "
-                    "begin appearing here."
+                    "MARK RELISTED, its relisting history will "
+                    "appear here."
                 ),
+                parent=self.container,
+            )
+
+            # History is rendered inside a scroll area, so keep
+            # enough vertical room for the empty-state content.
+            empty.setMinimumHeight(
+                300
             )
 
             self.groups_layout.insertWidget(

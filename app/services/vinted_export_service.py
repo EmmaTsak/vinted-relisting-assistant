@@ -21,6 +21,7 @@ from app.services.lifecycle_service import (
 )
 from app.services.listing_service import (
     ListingInput,
+    append_listing_note_line,
     create_listing,
     get_all_listings,
 )
@@ -66,6 +67,7 @@ class VintedImportResult:
     total_found: int = 0
     imported: int = 0
     skipped_existing: int = 0
+    relisted_matched: int = 0
     photos_imported: int = 0
     sold_imported: int = 0
     hidden_imported: int = 0
@@ -204,6 +206,17 @@ def _import_zip(
             _existing_vinted_ids()
         )
 
+        relisted_title_candidates = (
+            _existing_relisted_title_candidates()
+        )
+
+        new_title_counts = (
+            _new_export_title_counts(
+                listings,
+                existing_ids,
+            )
+        )
+
         html_directory = (
             posixpath.dirname(
                 html_member
@@ -232,6 +245,53 @@ def _import_zip(
             if listing.item_id in existing_ids:
                 result.skipped_existing += 1
                 continue
+
+            relisted_listing_id = (
+                _find_relisted_title_match(
+                    listing,
+                    relisted_title_candidates,
+                    new_title_counts,
+                )
+            )
+
+            if relisted_listing_id is not None:
+                try:
+                    _attach_relisted_vinted_id(
+                        relisted_listing_id,
+                        listing.item_id,
+                    )
+
+                except Exception as exc:
+                    result.warnings.append(
+                        (
+                            f"{listing.title}: looked like a "
+                            "relisted title match, but its new "
+                            f"Vinted ID could not be attached: {exc}"
+                        )
+                    )
+
+                    continue
+
+                existing_ids.add(
+                    listing.item_id
+                )
+
+                result.relisted_matched += 1
+
+                continue
+
+            if _has_ambiguous_relist_title_match(
+                listing,
+                relisted_title_candidates,
+                new_title_counts,
+            ):
+                result.warnings.append(
+                    (
+                        f"{listing.title}: possible relisted item "
+                        "had an ambiguous title match, so it was "
+                        "treated as a new listing instead."
+                    )
+                )
 
             try:
                 listing_id = _create_local_listing(
@@ -420,6 +480,17 @@ def _import_html_folder(
         _existing_vinted_ids()
     )
 
+    relisted_title_candidates = (
+        _existing_relisted_title_candidates()
+    )
+
+    new_title_counts = (
+        _new_export_title_counts(
+            listings,
+            existing_ids,
+        )
+    )
+
     total = len(
         listings
     )
@@ -438,6 +509,53 @@ def _import_html_folder(
         if listing.item_id in existing_ids:
             result.skipped_existing += 1
             continue
+
+        relisted_listing_id = (
+            _find_relisted_title_match(
+                listing,
+                relisted_title_candidates,
+                new_title_counts,
+            )
+        )
+
+        if relisted_listing_id is not None:
+            try:
+                _attach_relisted_vinted_id(
+                    relisted_listing_id,
+                    listing.item_id,
+                )
+
+            except Exception as exc:
+                result.warnings.append(
+                    (
+                        f"{listing.title}: looked like a "
+                        "relisted title match, but its new "
+                        f"Vinted ID could not be attached: {exc}"
+                    )
+                )
+
+                continue
+
+            existing_ids.add(
+                listing.item_id
+            )
+
+            result.relisted_matched += 1
+
+            continue
+
+        if _has_ambiguous_relist_title_match(
+            listing,
+            relisted_title_candidates,
+            new_title_counts,
+        ):
+            result.warnings.append(
+                (
+                    f"{listing.title}: possible relisted item "
+                    "had an ambiguous title match, so it was "
+                    "treated as a new listing instead."
+                )
+            )
 
         try:
             listing_id = _create_local_listing(
@@ -783,6 +901,222 @@ def _parse_html(
 
     return results
 
+
+
+def _normalize_vinted_title(
+    value: str,
+) -> str:
+    """
+    Normalize a title for conservative exact matching.
+
+    Differences in capitalization and repeated whitespace
+    are ignored. Wording itself must still be identical.
+    """
+    return " ".join(
+        value.casefold().split()
+    )
+
+
+def _existing_relisted_title_candidates(
+) -> dict[str, list[int]]:
+    """
+    Return existing Vinted-imported listings that are eligible
+    to represent a manually relisted item.
+
+    A listing is eligible only when:
+    - it already has at least one Vinted export item ID;
+    - it has actually been marked as relisted locally;
+    - it is not sold;
+    - it is not archived.
+    """
+    candidates: dict[
+        str,
+        list[int],
+    ] = {}
+
+    for listing in get_all_listings():
+        notes = (
+            listing.notes
+            or ""
+        )
+
+        if (
+            EXISTING_ID_PATTERN.search(
+                notes
+            )
+            is None
+        ):
+            continue
+
+        if (
+            listing.last_relisted_date
+            is None
+            and (
+                listing.number_of_times_relisted
+                or 0
+            ) <= 0
+        ):
+            continue
+
+        if (
+            listing.sold
+            or listing.archived
+        ):
+            continue
+
+        normalized_title = (
+            _normalize_vinted_title(
+                listing.title
+            )
+        )
+
+        if not normalized_title:
+            continue
+
+        candidates.setdefault(
+            normalized_title,
+            [],
+        ).append(
+            listing.id
+        )
+
+    return candidates
+
+
+def _new_export_title_counts(
+    listings: list[VintedExportListing],
+    existing_ids: set[str],
+) -> dict[str, int]:
+    """
+    Count titles belonging to genuinely unseen Vinted IDs
+    inside this export.
+
+    We only auto-match a title when it occurs once among new
+    IDs, which avoids attaching two same-title products to one
+    local listing.
+    """
+    counts: dict[
+        str,
+        int,
+    ] = {}
+
+    for listing in listings:
+        if listing.item_id in existing_ids:
+            continue
+
+        normalized_title = (
+            _normalize_vinted_title(
+                listing.title
+            )
+        )
+
+        if not normalized_title:
+            continue
+
+        counts[
+            normalized_title
+        ] = (
+            counts.get(
+                normalized_title,
+                0,
+            )
+            + 1
+        )
+
+    return counts
+
+
+def _find_relisted_title_match(
+    listing: VintedExportListing,
+    candidates: dict[str, list[int]],
+    new_title_counts: dict[str, int],
+) -> int | None:
+    """
+    Return a local listing ID only when the title match is
+    completely unambiguous.
+    """
+    normalized_title = (
+        _normalize_vinted_title(
+            listing.title
+        )
+    )
+
+    if not normalized_title:
+        return None
+
+    # There must be only one new Vinted item with this title.
+    if (
+        new_title_counts.get(
+            normalized_title,
+            0,
+        )
+        != 1
+    ):
+        return None
+
+    local_matches = (
+        candidates.get(
+            normalized_title,
+            [],
+        )
+    )
+
+    # There must also be only one eligible local listing.
+    if len(local_matches) != 1:
+        return None
+
+    return local_matches[0]
+
+
+def _has_ambiguous_relist_title_match(
+    listing: VintedExportListing,
+    candidates: dict[str, list[int]],
+    new_title_counts: dict[str, int],
+) -> bool:
+    normalized_title = (
+        _normalize_vinted_title(
+            listing.title
+        )
+    )
+
+    if not normalized_title:
+        return False
+
+    local_matches = (
+        candidates.get(
+            normalized_title,
+            [],
+        )
+    )
+
+    if not local_matches:
+        return False
+
+    return (
+        len(local_matches) != 1
+        or (
+            new_title_counts.get(
+                normalized_title,
+                0,
+            )
+            != 1
+        )
+    )
+
+
+def _attach_relisted_vinted_id(
+    listing_id: int,
+    item_id: str,
+) -> None:
+    marker = (
+        "[VINTED_EXPORT_ITEM_ID="
+        f"{item_id}]"
+    )
+
+    append_listing_note_line(
+        listing_id,
+        marker,
+    )
 
 def _create_local_listing(
     listing: VintedExportListing,

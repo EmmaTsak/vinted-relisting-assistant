@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QTextEdit,
@@ -141,19 +140,28 @@ class RelistingPreparationDialog(QDialog):
             )
 
         except ListingNotFoundError as exc:
-            QMessageBox.critical(
+            BrandedMessageDialog.error(
                 self,
-                "Listing Not Found",
-                str(exc),
+                title="Listing Not Found",
+                message=(
+                    "This listing could not be found."
+                ),
             )
 
             return
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Unable to Load Listing",
-                str(exc),
+                title="Unable to Load Listing",
+                message=(
+                    "The listing could not be loaded for relisting."
+                ),
+                context=(
+                    "Unable to load listing "
+                    f"#{self.listing_id} for relisting preparation"
+                ),
+                exception=exc,
             )
 
             return

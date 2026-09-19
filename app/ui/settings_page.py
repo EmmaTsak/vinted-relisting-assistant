@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -34,6 +33,12 @@ from app.services.settings_service import (
 )
 from app.ui.backup_dialog import (
     BackupRestoreDialog,
+)
+from app.ui.components.dialogs.error_feedback import (
+    show_logged_error,
+)
+from app.ui.components.dialogs.message_dialog import (
+    BrandedMessageDialog,
 )
 from app.ui.theme import (
     apply_theme,
@@ -674,14 +679,17 @@ class SettingsPage(QWidget):
             )
 
         except Exception as exc:
-            QMessageBox.warning(
+            show_logged_error(
                 self,
-                "Settings Error",
-                (
-                    "The saved settings could not "
-                    "be loaded. Defaults will be shown.\n\n"
-                    f"{exc}"
+                title="Settings Error",
+                message=(
+                    "Saved settings could not be loaded. "
+                    "Default values will be shown instead."
                 ),
+                context=(
+                    "Unable to load application settings"
+                ),
+                exception=exc,
             )
 
             settings = (
@@ -754,12 +762,11 @@ class SettingsPage(QWidget):
         )
 
         if not daily_text:
-            QMessageBox.warning(
+            BrandedMessageDialog.warning(
                 self,
-                "Missing Daily Limit",
-                (
-                    "Enter a daily relist limit "
-                    "between 1 and 50."
+                title="Missing Daily Limit",
+                message=(
+                    "Enter a daily relist limit between 1 and 50."
                 ),
             )
 
@@ -768,10 +775,10 @@ class SettingsPage(QWidget):
             return None
 
         if not age_text:
-            QMessageBox.warning(
+            BrandedMessageDialog.warning(
                 self,
-                "Missing Minimum Age",
-                (
+                title="Missing Minimum Age",
+                message=(
                     "Enter a minimum relist age "
                     "between 0 and 3650 days."
                 ),
@@ -791,10 +798,12 @@ class SettingsPage(QWidget):
             )
 
         except ValueError:
-            QMessageBox.warning(
+            BrandedMessageDialog.warning(
                 self,
-                "Invalid Number",
-                "Enter whole numbers only.",
+                title="Invalid Number",
+                message=(
+                    "Enter whole numbers only."
+                ),
             )
 
             return None
@@ -804,12 +813,11 @@ class SettingsPage(QWidget):
             <= daily_limit
             <= 50
         ):
-            QMessageBox.warning(
+            BrandedMessageDialog.warning(
                 self,
-                "Invalid Daily Limit",
-                (
-                    "Daily relist limit must be "
-                    "between 1 and 50."
+                title="Invalid Daily Limit",
+                message=(
+                    "Daily relist limit must be between 1 and 50."
                 ),
             )
 
@@ -822,10 +830,10 @@ class SettingsPage(QWidget):
             <= minimum_age
             <= 3650
         ):
-            QMessageBox.warning(
+            BrandedMessageDialog.warning(
                 self,
-                "Invalid Minimum Age",
-                (
+                title="Invalid Minimum Age",
+                message=(
                     "Minimum relist age must be "
                     "between 0 and 3650 days."
                 ),
@@ -935,10 +943,16 @@ class SettingsPage(QWidget):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Unable to Save Settings",
-                str(exc),
+                title="Unable to Save Settings",
+                message=(
+                    "Your settings could not be saved."
+                ),
+                context=(
+                    "Unable to save application settings"
+                ),
+                exception=exc,
             )
 
             return
@@ -955,11 +969,11 @@ class SettingsPage(QWidget):
             saved
         )
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Settings Saved",
-            (
-                "Your settings were saved successfully.\n\n"
+            title="Settings Saved",
+            message=(
+                "Your settings were saved successfully. "
                 "The selected theme has been applied."
             ),
         )
@@ -996,10 +1010,16 @@ class SettingsPage(QWidget):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Backup Failed",
-                str(exc),
+                title="Backup Failed",
+                message=(
+                    "The backup could not be created."
+                ),
+                context=(
+                    "Unable to create backup from Settings"
+                ),
+                exception=exc,
             )
 
             return
@@ -1017,10 +1037,10 @@ class SettingsPage(QWidget):
                 f"{len(backup.warnings)}"
             )
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Backup Created",
-            message,
+            title="Backup Created",
+            message=message,
         )
 
     def _open_backup_manager(
@@ -1047,14 +1067,17 @@ class SettingsPage(QWidget):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Restore Error",
-                (
-                    "The backup was restored, but the "
-                    "restored settings could not be loaded.\n\n"
-                    f"{exc}"
+                title="Restore Error",
+                message=(
+                    "The backup was restored, but its settings "
+                    "could not be loaded."
                 ),
+                context=(
+                    "Unable to load settings after backup restore"
+                ),
+                exception=exc,
             )
 
             return
@@ -1074,25 +1097,19 @@ class SettingsPage(QWidget):
     def _reset_defaults(
         self,
     ) -> None:
-        answer = QMessageBox.question(
+        confirmed = BrandedMessageDialog.ask(
             self,
-            "Reset Settings",
-            (
-                "Reset the fields to default values?\n\n"
-                "Press SAVE SETTINGS afterwards "
+            title="Reset Settings?",
+            message=(
+                "Reset all fields to their default values?\n\n"
+                "You will still need to press SAVE SETTINGS "
                 "to persist and apply them."
             ),
-            (
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.Cancel
-            ),
-            QMessageBox.StandardButton.Cancel,
+            confirm_text="RESET",
+            cancel_text="CANCEL",
         )
 
-        if (
-            answer
-            != QMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
         self._populate(

@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QProgressBar,
     QPushButton,
     QTextEdit,
@@ -22,12 +21,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.dialog_geometry import (
+    fit_dialog_to_screen,
+)
 from app.services.backup_service import (
     create_backup,
 )
 from app.services.vinted_export_service import (
     VintedExportError,
     import_vinted_export,
+)
+from app.ui.components.dialogs.error_feedback import (
+    show_logged_error,
+)
+from app.ui.components.dialogs.message_dialog import (
+    BrandedMessageDialog,
 )
 
 
@@ -69,6 +77,16 @@ class VintedExportImportDialog(QDialog):
         )
 
         self._build_ui()
+
+        fit_dialog_to_screen(
+            self,
+            preferred_width=760,
+            preferred_height=620,
+            minimum_width=620,
+            minimum_height=460,
+            width_ratio=0.88,
+            height_ratio=0.82,
+        )
 
     def _build_ui(
         self,
@@ -436,27 +454,21 @@ class VintedExportImportDialog(QDialog):
         if self.selected_file is None:
             return
 
-        confirmation = QMessageBox.question(
+        confirmed = BrandedMessageDialog.ask(
             self,
-            "Confirm Vinted Import",
-            (
-                "Import new listings from:\n\n"
-                f"{self.selected_file.name}\n\n"
-                "Existing Vinted listings will be skipped.\n"
-                "Existing local edits will not be overwritten.\n\n"
+            title="Import Vinted Data?",
+            message=(
+                f"Import from {self.selected_file.name}?\n\n"
+                "Known Vinted IDs will be skipped and relisted "
+                "items may be matched by title.\n\n"
+                "Your existing local edits will not be overwritten. "
                 "A safety backup will be created first."
             ),
-            (
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.Cancel
-            ),
-            QMessageBox.StandardButton.Cancel,
+            confirm_text="IMPORT",
+            cancel_text="CANCEL",
         )
 
-        if (
-            confirmation
-            != QMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
         self.import_button.setEnabled(
@@ -479,22 +491,24 @@ class VintedExportImportDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Backup Failed",
-                (
-                    "The safety backup could not be created.\n\n"
-                    "The import has been cancelled and nothing "
-                    "has been imported.\n\n"
-                    f"{exc}"
+                title="Backup Failed",
+                message=(
+                    "The safety backup could not be created, "
+                    "so the import was cancelled."
                 ),
+                context=(
+                    "Unable to create pre-Vinted-import backup"
+                ),
+                exception=exc,
             )
 
             self.result_output.setPlainText(
                 (
                     "IMPORT CANCELLED\n\n"
-                    "Safety backup failed.\n\n"
-                    f"{exc}"
+                    "The safety backup could not be created.\n\n"
+                    "Technical details were saved to the app log."
                 )
             )
 
@@ -531,10 +545,10 @@ class VintedExportImportDialog(QDialog):
             )
 
         except VintedExportError as exc:
-            QMessageBox.critical(
+            BrandedMessageDialog.error(
                 self,
-                "Vinted Import Failed",
-                str(
+                title="Vinted Import Failed",
+                message=str(
                     exc
                 ),
             )
@@ -557,19 +571,23 @@ class VintedExportImportDialog(QDialog):
             return
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Vinted Import Failed",
-                (
-                    f"{type(exc).__name__}: "
-                    f"{exc}"
+                title="Vinted Import Failed",
+                message=(
+                    "The Vinted export could not be imported."
                 ),
+                context=(
+                    "Unexpected Vinted export import failure"
+                ),
+                exception=exc,
             )
 
             self.result_output.setPlainText(
                 (
                     "IMPORT FAILED\n\n"
-                    f"{type(exc).__name__}: {exc}"
+                    "The import could not be completed.\n\n"
+                    "Technical details were saved to the app log."
                 )
             )
 
@@ -603,8 +621,12 @@ class VintedExportImportDialog(QDialog):
                 f"{result.imported}"
             ),
             (
-                "Existing skipped:      "
+                "Existing IDs skipped:  "
                 f"{result.skipped_existing}"
+            ),
+            (
+                "Relisted title matches:"
+                f" {result.relisted_matched}"
             ),
             (
                 "Photos imported:       "
@@ -671,12 +693,13 @@ class VintedExportImportDialog(QDialog):
             result.imported
         )
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Vinted Import Complete",
-            (
+            title="Vinted Import Complete",
+            message=(
                 f"New listings imported: {result.imported}\n"
-                f"Existing skipped: {result.skipped_existing}\n"
+                f"Existing IDs skipped: {result.skipped_existing}\n"
+                f"Relisted matched by title: {result.relisted_matched}\n"
                 f"Photos imported: {result.photos_imported}\n"
                 f"Warnings: {len(result.warnings)}"
             ),

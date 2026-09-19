@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from collections.abc import Callable
 
@@ -580,6 +580,14 @@ class StatusListingsPage(QWidget):
             message=message,
             action_text=action_text,
             action=action,
+            parent=self.container,
+        )
+
+        # This page also renders inside a scroll area.
+        # Reserve enough space so the message/action cannot
+        # be squeezed or clipped.
+        state.setMinimumHeight(
+            320
         )
 
         self.cards_layout.insertWidget(
@@ -719,7 +727,7 @@ class SoldListingsPage(
                 "Nothing sold here yet"
             ),
             empty_message=(
-                "When you mark an item as sold, itâ€™ll settle "
+                "When you mark an item as sold, it’ll settle "
                 "in here with its photos and details."
             ),
             search_placeholder=(

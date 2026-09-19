@@ -11,7 +11,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(
     __file__
-).resolve().parent
+).resolve().parent.parent
 
 
 def get_persistent_root() -> Path:

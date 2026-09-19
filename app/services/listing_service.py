@@ -445,6 +445,69 @@ def update_listing_price(
             normalized_price
         )
 
+
+def append_listing_note_line(
+    listing_id: int,
+    line: str,
+) -> bool:
+    """
+    Append one unique line to a listing's notes.
+
+    Returns True when the notes were changed and False when
+    the exact line was already present.
+    """
+    cleaned_line = line.strip()
+
+    if not cleaned_line:
+        return False
+
+    changed = False
+
+    with session_scope() as session:
+        listing = session.get(
+            Listing,
+            listing_id,
+        )
+
+        if listing is None:
+            raise ListingNotFoundError(
+                (
+                    "Listing with ID "
+                    f"{listing_id} does not exist."
+                )
+            )
+
+        existing_notes = (
+            listing.notes
+            or ""
+        )
+
+        existing_lines = {
+            item.strip()
+            for item
+            in existing_notes.splitlines()
+            if item.strip()
+        }
+
+        if cleaned_line in existing_lines:
+            return False
+
+        if existing_notes.strip():
+            listing.notes = (
+                existing_notes.rstrip()
+                + "\n"
+                + cleaned_line
+            )
+
+        else:
+            listing.notes = (
+                cleaned_line
+            )
+
+        changed = True
+
+    return changed
+
 def get_listing(
     listing_id: int,
 ) -> Listing:

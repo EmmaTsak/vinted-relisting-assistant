@@ -1350,6 +1350,14 @@ class DailyQueuePage(QWidget):
         state = FriendlyEmptyState(
             title=title,
             message=message,
+            parent=self.container,
+        )
+
+        # Today's Queue is rendered inside a scroll area.
+        # Reserve enough vertical room so the friendly state
+        # cannot be squeezed or clipped.
+        state.setMinimumHeight(
+            300
         )
 
         self.cards_layout.insertWidget(

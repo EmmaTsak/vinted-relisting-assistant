@@ -13,16 +13,24 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+from app.ui.dialog_geometry import (
+    fit_dialog_to_screen,
+)
 from app.services.import_service import (
     ImportFileError,
     import_listings_file,
+)
+from app.ui.components.dialogs.error_feedback import (
+    show_logged_error,
+)
+from app.ui.components.dialogs.message_dialog import (
+    BrandedMessageDialog,
 )
 
 
@@ -68,6 +76,16 @@ class ImportListingsDialog(QDialog):
         )
 
         self._build_ui()
+
+        fit_dialog_to_screen(
+            self,
+            preferred_width=740,
+            preferred_height=620,
+            minimum_width=600,
+            minimum_height=460,
+            width_ratio=0.88,
+            height_ratio=0.82,
+        )
 
         self._apply_styles()
 
@@ -520,27 +538,20 @@ class ImportListingsDialog(QDialog):
         if self.selected_file is None:
             return
 
-        confirmation = QMessageBox.question(
+        confirmed = BrandedMessageDialog.ask(
             self,
-            "Confirm CSV / JSON Import",
-            (
-                "Import listings from:\n\n"
-                f"{self.selected_file.name}\n\n"
-                "Existing listings will not be deleted.\n\n"
-                "Important: generic CSV / JSON files do not "
-                "have Vinted item-ID duplicate protection."
+            title="Confirm Import",
+            message=(
+                f"Import listings from {self.selected_file.name}?\n\n"
+                "Existing listings will not be deleted. "
+                "Generic CSV / JSON imports do not have "
+                "Vinted item-ID duplicate protection."
             ),
-            (
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.Cancel
-            ),
-            QMessageBox.StandardButton.Cancel,
+            confirm_text="IMPORT",
+            cancel_text="CANCEL",
         )
 
-        if (
-            confirmation
-            != QMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
         self.import_button.setEnabled(
@@ -563,10 +574,12 @@ class ImportListingsDialog(QDialog):
             )
 
         except ImportFileError as exc:
-            QMessageBox.critical(
+            message = str(exc)
+
+            BrandedMessageDialog.error(
                 self,
-                "Import Failed",
-                str(exc),
+                title="Import Failed",
+                message=message,
             )
 
             self.status_label.setText(
@@ -574,7 +587,7 @@ class ImportListingsDialog(QDialog):
             )
 
             self.result_output.setPlainText(
-                str(exc)
+                message
             )
 
             self.import_button.setEnabled(
@@ -584,15 +597,16 @@ class ImportListingsDialog(QDialog):
             return
 
         except Exception as exc:
-            message = (
-                f"{type(exc).__name__}: "
-                f"{exc}"
-            )
-
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Import Failed",
-                message,
+                title="Import Failed",
+                message=(
+                    "The listings could not be imported."
+                ),
+                context=(
+                    "Unexpected CSV / JSON import failure"
+                ),
+                exception=exc,
             )
 
             self.status_label.setText(
@@ -600,7 +614,10 @@ class ImportListingsDialog(QDialog):
             )
 
             self.result_output.setPlainText(
-                message
+                (
+                    "The import could not be completed.\n\n"
+                    "Technical details were saved to the app log."
+                )
             )
 
             self.import_button.setEnabled(
@@ -686,10 +703,10 @@ class ImportListingsDialog(QDialog):
                 result.imported_count
             )
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Import Complete",
-            (
+            title="Import Complete",
+            message=(
                 "Listings imported: "
                 f"{result.imported_count}\n"
                 "Photos imported: "

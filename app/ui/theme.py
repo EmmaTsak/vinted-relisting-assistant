@@ -1108,6 +1108,14 @@ class ThemeManager(QObject):
             font-weight: 700;
         }}
 
+        #friendlyEmptyState {{
+            background-color: {surface};
+            color: {muted_text};
+            border: 1px solid {border};
+            border-radius: 14px;
+            padding: 0px;
+        }}
+
         #emptyState,
         #queueEmpty,
         #historyEmpty,

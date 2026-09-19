@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -26,6 +25,12 @@ from app.services.category_service import (
     get_category_listing_summaries,
     get_existing_categories,
     get_existing_subcategories,
+)
+from app.ui.components.dialogs.error_feedback import (
+    show_logged_error,
+)
+from app.ui.components.dialogs.message_dialog import (
+    BrandedMessageDialog,
 )
 
 
@@ -791,12 +796,11 @@ class CategoryManagerDialog(QDialog):
         )
 
         if not listing_ids:
-            QMessageBox.information(
+            BrandedMessageDialog.notice(
                 self,
-                "Nothing Selected",
-                (
-                    "Select at least one "
-                    "listing first."
+                title="Nothing Selected",
+                message=(
+                    "Select at least one listing first."
                 ),
             )
 
@@ -809,12 +813,11 @@ class CategoryManagerDialog(QDialog):
         )
 
         if not category:
-            QMessageBox.warning(
+            BrandedMessageDialog.warning(
                 self,
-                "Missing Category",
-                (
-                    "Enter the category "
-                    "you want to assign."
+                title="Missing Category",
+                message=(
+                    "Enter the category you want to assign."
                 ),
             )
 
@@ -834,28 +837,19 @@ class CategoryManagerDialog(QDialog):
         )
 
         if overwrite:
-            confirmation = (
-                QMessageBox.question(
-                    self,
-                    "Replace Existing Categories?",
-                    (
-                        "Some selected listings may "
-                        "already have a category.\n\n"
-                        "Do you want to replace "
-                        "existing category values?"
-                    ),
-                    (
-                        QMessageBox.StandardButton.Yes
-                        | QMessageBox.StandardButton.Cancel
-                    ),
-                    QMessageBox.StandardButton.Cancel,
-                )
+            confirmed = BrandedMessageDialog.ask(
+                self,
+                title="Replace Existing Categories?",
+                message=(
+                    "Some selected listings may already "
+                    "have a category.\n\n"
+                    "Replace the existing category values?"
+                ),
+                confirm_text="REPLACE",
+                cancel_text="CANCEL",
             )
 
-            if (
-                confirmation
-                != QMessageBox.StandardButton.Yes
-            ):
+            if not confirmed:
                 return
 
         try:
@@ -871,10 +865,16 @@ class CategoryManagerDialog(QDialog):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Category Update Failed",
-                str(exc),
+                title="Category Update Failed",
+                message=(
+                    "The selected listings could not be updated."
+                ),
+                context=(
+                    "Unable to bulk update listing categories"
+                ),
+                exception=exc,
             )
 
             return
@@ -903,10 +903,10 @@ class CategoryManagerDialog(QDialog):
                 )
             )
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Categories Updated",
-            "\n".join(
+            title="Categories Updated",
+            message="\n".join(
                 message_parts
             ),
         )

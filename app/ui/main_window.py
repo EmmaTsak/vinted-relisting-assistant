@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QMessageBox,
     QPushButton,
     QSizePolicy,
     QStackedWidget,
@@ -68,7 +67,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
     QSizePolicy,
     QStackedWidget,
@@ -106,6 +104,10 @@ WELCOME_COMPLETE_KEY = (
 
 from app.ui.vinted_export_import_dialog import (
     VintedExportImportDialog,
+)
+
+from app.ui.components.dialogs.error_feedback import (
+    show_logged_error,
 )
 
 from app.ui.components.dialogs.message_dialog import (
@@ -1037,10 +1039,17 @@ class MainWindow(QMainWindow):
             )
 
         except Exception as exc:
-            QMessageBox.critical(
+            show_logged_error(
                 self,
-                "Unable to Manage Listing",
-                str(exc),
+                title="Unable to Manage Listing",
+                message=(
+                    "The listing management window could not be opened."
+                ),
+                context=(
+                    "Unable to open lifecycle dialog for "
+                    f"listing {listing_id}"
+                ),
+                exception=exc,
             )
 
             return
@@ -1127,10 +1136,10 @@ class MainWindow(QMainWindow):
 
         self._mark_listing_views_dirty()
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Listing Saved",
-            (
+            title="Listing Saved",
+            message=(
                 "The listing was saved locally.\n\n"
                 f"Listing ID: {listing_id}"
             ),
@@ -1142,12 +1151,11 @@ class MainWindow(QMainWindow):
     ) -> None:
         self._mark_listing_views_dirty()
 
-        QMessageBox.information(
+        BrandedMessageDialog.notice(
             self,
-            "Listing Updated",
-            (
-                f"Listing #{listing_id} "
-                "was updated successfully."
+            title="Listing Updated",
+            message=(
+                f"Listing #{listing_id} was updated successfully."
             ),
         )
 
@@ -2054,47 +2062,23 @@ class MainWindow(QMainWindow):
                 app.activeWindow()
             )
 
-        message_box = QMessageBox(
-            parent
-        )
-
-        message_box.setIcon(
-            QMessageBox.Icon.Critical
-        )
-
-        message_box.setWindowTitle(
-            "Something Went Wrong"
-        )
-
-        message_box.setText(
-            "The app ran into an unexpected problem."
-        )
-
-        message_box.setInformativeText(
-            (
+        BrandedMessageDialog.error(
+            parent,
+            title="Something Went Wrong",
+            message=(
+                "The app ran into an unexpected problem.\n\n"
                 "Technical details were saved to the local "
-                "application log.\n\n"
-                "You can close this message and continue if the "
-                "app is still responding. If the problem happens "
-                "again, restart the app."
-            )
-        )
-
-        message_box.setDetailedText(
-            (
+                "application log. You can continue if the app "
+                "is still responding, or restart it if the "
+                "problem happens again."
+            ),
+            detail=(
                 "Log file:\n"
                 f"{log_path}\n\n"
                 "The log can contain technical information such "
-                "as local file paths. Review it before sharing it "
-                "with anyone."
-            )
+                "as local file paths. Review it before sharing it."
+            ),
         )
-
-        message_box.setStandardButtons(
-            QMessageBox.StandardButton.Ok
-        )
-
-        message_box.exec()
 
     # =====================================================
     # Add / Import hub
