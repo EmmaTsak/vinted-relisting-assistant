@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import (
+    QTimer,
     Qt,
     Signal,
 )
@@ -44,6 +45,12 @@ from app.ui.components.dialogs.error_feedback import (
 )
 from app.ui.components.states.empty_state import (
     FriendlyEmptyState,
+)
+from app.ui.components.states.loading_state import (
+    FriendlyLoadingState,
+)
+from app.ui.components.states.photo_fallback import (
+    show_photo_fallback,
 )
 from app.ui.image_cache import (
     get_scaled_pixmap,
@@ -426,8 +433,9 @@ class QueueCard(QFrame):
             )
 
             if cover is None:
-                photo_label.setText(
-                    "No Photo"
+                show_photo_fallback(
+                    photo_label,
+                    object_name="queuePhoto",
                 )
 
                 return photo_label
@@ -447,8 +455,10 @@ class QueueCard(QFrame):
             )
 
             if pixmap.isNull():
-                photo_label.setText(
-                    "No Preview"
+                show_photo_fallback(
+                    photo_label,
+                    preview_unavailable=True,
+                    object_name="queuePhoto",
                 )
 
                 return photo_label
@@ -466,8 +476,10 @@ class QueueCard(QFrame):
                 exception=exc,
             )
 
-            photo_label.setText(
-                "Photo unavailable"
+            show_photo_fallback(
+                photo_label,
+                preview_unavailable=True,
+                object_name="queuePhoto",
             )
 
         return photo_label
@@ -836,6 +848,35 @@ class DailyQueuePage(QWidget):
     # =====================================================
 
     def refresh(
+        self,
+    ) -> None:
+        """
+        Show the loading state before rebuilding today's queue.
+        """
+        if getattr(
+            self,
+            "_refresh_pending",
+            False,
+        ):
+            return
+
+        self._refresh_pending = True
+
+        self._show_loading_state()
+
+        QTimer.singleShot(
+            0,
+            self._run_deferred_refresh,
+        )
+
+    def _run_deferred_refresh(
+        self,
+    ) -> None:
+        self._refresh_pending = False
+
+        self._perform_refresh()
+
+    def _perform_refresh(
         self,
     ) -> None:
         try:
@@ -1341,6 +1382,33 @@ class DailyQueuePage(QWidget):
     # =====================================================
     # Friendly / error states
     # =====================================================
+
+    def _show_loading_state(
+        self,
+    ) -> None:
+        self.message_label.setText(
+            "Refreshing today's queue..."
+        )
+
+        self._clear_cards()
+
+        loading = FriendlyLoadingState(
+            title="Loading today's queue?",
+            message=(
+                "Checking which listings are ready "
+                "for relisting."
+            ),
+            parent=self.container,
+        )
+
+        loading.setMinimumHeight(
+            300
+        )
+
+        self.cards_layout.insertWidget(
+            0,
+            loading,
+        )
 
     def _show_friendly_state(
         self,

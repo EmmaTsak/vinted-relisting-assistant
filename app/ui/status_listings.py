@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from PySide6.QtCore import (
+    QTimer,
     Qt,
     Signal,
 )
@@ -28,6 +29,9 @@ from app.services.listing_service import (
 )
 from app.ui.components.states.empty_state import (
     FriendlyEmptyState,
+)
+from app.ui.components.states.loading_state import (
+    FriendlyLoadingState,
 )
 from app.ui.listing_card import (
     ListingCard,
@@ -316,6 +320,29 @@ class StatusListingsPage(QWidget):
     def refresh(
         self,
     ) -> None:
+        self._refresh_pending = False
+
+        self._perform_refresh()
+
+
+    def _run_deferred_refresh(
+        self,
+    ) -> None:
+        self._refresh_pending = False
+
+        self._perform_refresh()
+
+    def refresh_silent(
+        self,
+    ) -> None:
+        self._refresh_pending = False
+
+        self._perform_refresh()
+
+
+    def _perform_refresh(
+        self,
+    ) -> None:
         """
         Reload the underlying Sold/Archived inventory.
 
@@ -480,6 +507,17 @@ class StatusListingsPage(QWidget):
         self,
         listings: list[Listing],
     ) -> None:
+        # Freeze the complete visible list while its cards are
+        # rebuilt. The user continues seeing the previous stable
+        # frame instead of partially-created card outlines.
+        self.scroll_area.setUpdatesEnabled(
+            False
+        )
+
+        self.scroll_area.viewport().setUpdatesEnabled(
+            False
+        )
+
         self.container.setUpdatesEnabled(
             False
         )
@@ -561,7 +599,25 @@ class StatusListingsPage(QWidget):
                 True
             )
 
+            # Reveal the newly rebuilt page in one repaint.
+            self.scroll_area.viewport().setUpdatesEnabled(
+                True
+            )
+
+            self.scroll_area.setUpdatesEnabled(
+                True
+            )
+
+            self.scroll_area.viewport().update()
+            self.scroll_area.update()
+
             self.container.update()
+
+    def _show_loading_state(
+        self,
+    ) -> None:
+        return
+
 
     def _show_empty_state(
         self,

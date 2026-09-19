@@ -813,6 +813,8 @@ class ThemeManager(QObject):
         }}
 
         #noPhoto,
+        #queuePhoto[photoFallback="true"],
+        #largePreview[photoFallback="true"],
         #statisticSubtitle {{
             color: {muted_text};
         }}
@@ -1108,7 +1110,8 @@ class ThemeManager(QObject):
             font-weight: 700;
         }}
 
-        #friendlyEmptyState {{
+        #friendlyEmptyState,
+        #friendlyLoadingState {{
             background-color: {surface};
             color: {muted_text};
             border: 1px solid {border};

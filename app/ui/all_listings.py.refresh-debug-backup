@@ -1234,7 +1234,6 @@ class AllListingsPage(QWidget):
             result.filtered_count
         )
 
-
         total_pages = max(
             1,
             math.ceil(

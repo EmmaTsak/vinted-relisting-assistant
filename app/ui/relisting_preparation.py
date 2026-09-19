@@ -55,6 +55,9 @@ from app.ui.components.dialogs.message_dialog import (
 from app.ui.components.dialogs.success_dialog import (
     BrandedSuccessDialog,
 )
+from app.ui.components.states.photo_fallback import (
+    show_photo_fallback,
+)
 from app.utils.clipboard import (
     copy_text,
 )
@@ -544,9 +547,7 @@ class RelistingPreparationDialog(QDialog):
             title_row
         )
 
-        self.large_preview = QLabel(
-            "No Photo"
-        )
+        self.large_preview = QLabel()
 
         self.large_preview.setAlignment(
             Qt.AlignmentFlag.AlignCenter
@@ -1280,8 +1281,9 @@ class RelistingPreparationDialog(QDialog):
         self.photo_list.clear()
 
         if not self.photos:
-            self.large_preview.setText(
-                "No photos stored"
+            show_photo_fallback(
+                self.large_preview,
+                object_name="largePreview",
             )
 
             return
@@ -1369,10 +1371,10 @@ class RelistingPreparationDialog(QDialog):
         )
 
         if not path.exists():
-            self.large_preview.clear()
-
-            self.large_preview.setText(
-                "Photo file is missing"
+            show_photo_fallback(
+                self.large_preview,
+                preview_unavailable=True,
+                object_name="largePreview",
             )
 
             return
@@ -1384,13 +1386,22 @@ class RelistingPreparationDialog(QDialog):
         )
 
         if pixmap.isNull():
-            self.large_preview.clear()
-
-            self.large_preview.setText(
-                "Unable to preview image"
+            show_photo_fallback(
+                self.large_preview,
+                preview_unavailable=True,
+                object_name="largePreview",
             )
 
             return
+
+        self.large_preview.clear()
+        self.large_preview.setProperty(
+            "photoFallback",
+            False,
+        )
+        self.large_preview.setToolTip(
+            ""
+        )
 
         self.large_preview.setPixmap(
             pixmap.scaled(

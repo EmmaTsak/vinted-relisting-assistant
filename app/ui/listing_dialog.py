@@ -72,6 +72,9 @@ from app.ui.components.dialogs.error_feedback import (
 from app.ui.components.dialogs.message_dialog import (
     BrandedMessageDialog,
 )
+from app.ui.components.states.photo_fallback import (
+    show_photo_fallback,
+)
 
 from app.ui.dialog_geometry import (
     fit_dialog_to_screen,
@@ -206,8 +209,16 @@ class PhotoPreviewDialog(QDialog):
 
         label = QLabel()
 
+        label.setObjectName(
+            "largePreview"
+        )
+
         label.setAlignment(
             Qt.AlignmentFlag.AlignCenter
+        )
+
+        label.setWordWrap(
+            True
         )
 
         pixmap = QPixmap(
@@ -215,8 +226,10 @@ class PhotoPreviewDialog(QDialog):
         )
 
         if pixmap.isNull():
-            label.setText(
-                "Unable to preview this image."
+            show_photo_fallback(
+                label,
+                preview_unavailable=True,
+                object_name="largePreview",
             )
 
         else:
@@ -232,6 +245,16 @@ class PhotoPreviewDialog(QDialog):
         layout.addWidget(
             label,
             1,
+        )
+
+        fit_dialog_to_screen(
+            self,
+            preferred_width=900,
+            preferred_height=700,
+            minimum_width=520,
+            minimum_height=420,
+            width_ratio=0.88,
+            height_ratio=0.84,
         )
 
 

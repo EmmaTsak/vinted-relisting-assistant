@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from PySide6.QtCore import (
+    QTimer,
     Qt,
     Signal,
 )
@@ -18,11 +19,19 @@ from PySide6.QtWidgets import (
 
 from app.services.history_service import (
     HistoryRecord,
+    HistoryUndoError,
     get_history_summary,
     get_relist_history,
+    undo_relist,
 )
 from app.ui.components.states.empty_state import (
     FriendlyEmptyState,
+)
+from app.ui.components.states.loading_state import (
+    FriendlyLoadingState,
+)
+from app.ui.components.dialogs.message_dialog import (
+    BrandedMessageDialog,
 )
 
 
@@ -32,10 +41,12 @@ class HistoryRecordRow(QFrame):
     """
 
     edit_requested = Signal(int)
+    undo_requested = Signal(int)
 
     def __init__(
         self,
         record: HistoryRecord,
+        undo_enabled: bool = True,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(
@@ -43,6 +54,7 @@ class HistoryRecordRow(QFrame):
         )
 
         self.record = record
+        self.undo_enabled = undo_enabled
 
         self.setObjectName(
             "activityRow"
@@ -109,6 +121,43 @@ class HistoryRecordRow(QFrame):
         layout.addLayout(
             information,
             1,
+        )
+
+        undo_button = QPushButton(
+            "UNDO RELIST"
+        )
+
+        undo_button.setObjectName(
+            "secondaryButton"
+        )
+
+        undo_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        undo_button.setMinimumWidth(
+            108
+        )
+
+        undo_button.setEnabled(
+            self.undo_enabled
+        )
+
+        if not self.undo_enabled:
+            undo_button.setToolTip(
+                "Only the most recent relist for this listing can be undone."
+            )
+
+        undo_button.clicked.connect(
+            lambda: (
+                self.undo_requested.emit(
+                    self.record.id
+                )
+            )
+        )
+
+        layout.addWidget(
+            undo_button
         )
 
         edit_button = QPushButton(
@@ -197,11 +246,13 @@ class HistoryDayGroup(QFrame):
     """
 
     edit_requested = Signal(int)
+    undo_requested = Signal(int)
 
     def __init__(
         self,
         relisted_date: date,
         records: list[HistoryRecord],
+        undoable_history_ids: set[int] | None = None,
         expanded: bool = False,
         parent: QWidget | None = None,
     ) -> None:
@@ -214,6 +265,10 @@ class HistoryDayGroup(QFrame):
         )
 
         self.records = records
+        self.undoable_history_ids = (
+            undoable_history_ids
+            or set()
+        )
 
         self.setObjectName(
             "historyCard"
@@ -358,11 +413,19 @@ class HistoryDayGroup(QFrame):
 
         for record in self.records:
             row = HistoryRecordRow(
-                record
+                record,
+                undo_enabled=(
+                    record.id
+                    in self.undoable_history_ids
+                ),
             )
 
             row.edit_requested.connect(
                 self.edit_requested.emit
+            )
+
+            row.undo_requested.connect(
+                self.undo_requested.emit
             )
 
             records_layout.addWidget(
@@ -569,6 +632,36 @@ class HistoryPage(QWidget):
     def refresh(
         self,
     ) -> None:
+        """
+        Show a lightweight loading state before rebuilding
+        relisting history.
+        """
+        if getattr(
+            self,
+            "_refresh_pending",
+            False,
+        ):
+            return
+
+        self._refresh_pending = True
+
+        self._show_loading_state()
+
+        QTimer.singleShot(
+            0,
+            self._run_deferred_refresh,
+        )
+
+    def _run_deferred_refresh(
+        self,
+    ) -> None:
+        self._refresh_pending = False
+
+        self._perform_refresh()
+
+    def _perform_refresh(
+        self,
+    ) -> None:
         self._clear_groups()
 
         try:
@@ -666,6 +759,24 @@ class HistoryPage(QWidget):
 
             return
 
+        # Only the newest recorded relist for each listing
+        # may be undone safely.
+        undoable_history_ids: set[int] = set()
+        seen_listing_ids: set[int] = set()
+
+        for record in records:
+            if (
+                record.listing_id
+                not in seen_listing_ids
+            ):
+                seen_listing_ids.add(
+                    record.listing_id
+                )
+
+                undoable_history_ids.add(
+                    record.id
+                )
+
         grouped: dict[
             date,
             list[HistoryRecord],
@@ -690,6 +801,9 @@ class HistoryPage(QWidget):
                     relisted_date
                 ),
                 records=day_records,
+                undoable_history_ids=(
+                    undoable_history_ids
+                ),
 
                 # Every date starts closed.
                 expanded=False,
@@ -699,10 +813,95 @@ class HistoryPage(QWidget):
                 self.edit_requested.emit
             )
 
+            group.undo_requested.connect(
+                self._undo_relist
+            )
+
             self.groups_layout.insertWidget(
                 index,
                 group,
             )
+
+    def _undo_relist(
+        self,
+        history_id: int,
+    ) -> None:
+        confirmed = BrandedMessageDialog.ask(
+            self,
+            title="Undo relist?",
+            message=(
+                "This will remove the latest relist record "
+                "and restore the listing's previous relist date "
+                "and count."
+            ),
+            confirm_text="UNDO RELIST",
+            cancel_text="CANCEL",
+        )
+
+        if not confirmed:
+            return
+
+        try:
+            undo_relist(
+                history_id
+            )
+
+        except HistoryUndoError as exc:
+            BrandedMessageDialog.warning(
+                self,
+                title="Unable to Undo",
+                message=str(
+                    exc
+                ),
+            )
+
+            self.refresh()
+            return
+
+        except Exception:
+            BrandedMessageDialog.error(
+                self,
+                title="Undo Failed",
+                message=(
+                    "The relist could not be undone. "
+                    "Your existing history has been left unchanged."
+                ),
+            )
+
+            return
+
+        self.refresh()
+
+        BrandedMessageDialog.notice(
+            self,
+            title="Relist Undone",
+            message=(
+                "The listing's latest relist record "
+                "was successfully restored."
+            ),
+        )
+
+    def _show_loading_state(
+        self,
+    ) -> None:
+        self._clear_groups()
+
+        loading = FriendlyLoadingState(
+            title="Loading history?",
+            message=(
+                "Refreshing your relisting activity."
+            ),
+            parent=self.container,
+        )
+
+        loading.setMinimumHeight(
+            300
+        )
+
+        self.groups_layout.insertWidget(
+            0,
+            loading,
+        )
 
     def _clear_groups(
         self,

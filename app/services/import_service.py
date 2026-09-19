@@ -8,6 +8,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
+
 from app.database import session_scope
 from app.models import (
     Listing,
@@ -65,6 +67,186 @@ FIELD_ALIASES = {
 }
 
 
+IMPORT_DUPLICATE_FIELDS = (
+    "title",
+    "description",
+    "price",
+    "currency",
+    "category",
+    "subcategory",
+    "brand",
+    "size",
+    "condition",
+    "colour",
+    "material",
+    "parcel_size",
+    "isbn",
+    "notes",
+)
+
+
+def _signature_text(
+    value: Any,
+) -> str:
+    if value is None:
+        return ""
+
+    return " ".join(
+        str(
+            value
+        ).split()
+    ).casefold()
+
+
+def _import_signature_from_row(
+    row: dict[str, Any],
+) -> tuple[Any, ...]:
+    title = _required_text(
+        row.get(
+            "title"
+        ),
+        "title",
+    )
+
+    price = _parse_price(
+        row.get(
+            "price"
+        )
+    )
+
+    currency = (
+        _optional_text(
+            row.get(
+                "currency"
+            )
+        )
+        or "EUR"
+    ).upper()
+
+    values = {
+        "title": title,
+        "description": (
+            _optional_text(
+                row.get(
+                    "description"
+                )
+            )
+            or ""
+        ),
+        "price": price,
+        "currency": currency,
+        "category": _optional_text(
+            row.get(
+                "category"
+            )
+        ),
+        "subcategory": _optional_text(
+            row.get(
+                "subcategory"
+            )
+        ),
+        "brand": _optional_text(
+            row.get(
+                "brand"
+            )
+        ),
+        "size": _optional_text(
+            row.get(
+                "size"
+            )
+        ),
+        "condition": _optional_text(
+            row.get(
+                "condition"
+            )
+        ),
+        "colour": _optional_text(
+            row.get(
+                "colour"
+            )
+        ),
+        "material": _optional_text(
+            row.get(
+                "material"
+            )
+        ),
+        "parcel_size": _optional_text(
+            row.get(
+                "parcel_size"
+            )
+        ),
+        "isbn": _optional_text(
+            row.get(
+                "isbn"
+            )
+        ),
+        "notes": (
+            _optional_text(
+                row.get(
+                    "notes"
+                )
+            )
+            or ""
+        ),
+    }
+
+    return tuple(
+        (
+            values[field]
+            if field == "price"
+            else _signature_text(
+                values[field]
+            )
+        )
+        for field
+        in IMPORT_DUPLICATE_FIELDS
+    )
+
+
+def _import_signature_from_listing(
+    listing: Listing,
+) -> tuple[Any, ...]:
+    return tuple(
+        (
+            getattr(
+                listing,
+                field,
+                None,
+            )
+            if field == "price"
+            else _signature_text(
+                getattr(
+                    listing,
+                    field,
+                    None,
+                )
+            )
+        )
+        for field
+        in IMPORT_DUPLICATE_FIELDS
+    )
+
+
+def _load_existing_import_signatures(
+) -> set[tuple[Any, ...]]:
+    with session_scope() as session:
+        listings = list(
+            session.scalars(
+                select(
+                    Listing
+                )
+            ).all()
+        )
+
+        return {
+            _import_signature_from_listing(
+                listing
+            )
+            for listing
+            in listings
+        }
+
+
 def import_listings_file(
     file_path: str | Path,
 ) -> ImportResult:
@@ -108,6 +290,13 @@ def import_listings_file(
         )
     )
 
+    # Snapshot only listings that existed BEFORE this import.
+    # This prevents importing the same file again while still
+    # allowing intentionally identical rows inside one file.
+    existing_import_signatures = (
+        _load_existing_import_signatures()
+    )
+
     for row_number, raw_row in enumerate(
         rows,
         start=1,
@@ -116,6 +305,31 @@ def import_listings_file(
             normalized = _normalize_row(
                 raw_row
             )
+
+            import_signature = (
+                _import_signature_from_row(
+                    normalized
+                )
+            )
+
+            if (
+                import_signature
+                in existing_import_signatures
+            ):
+                result.skipped_count += 1
+
+                result.warnings.append(
+                    ImportRowWarning(
+                        row_number=row_number,
+                        message=(
+                            "Duplicate already exists in "
+                            "your local inventory. "
+                            "This row was skipped."
+                        ),
+                    )
+                )
+
+                continue
 
             photo_paths = _parse_photos(
                 normalized.get(

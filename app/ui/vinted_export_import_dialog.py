@@ -116,9 +116,9 @@ class VintedExportImportDialog(QDialog):
 
         description = QLabel(
             (
-                "Import listings from a newer Vinted personal-data "
-                "export without creating duplicates of listings "
-                "you have already imported."
+                "Import a newer Vinted personal-data export safely. "
+                "Existing items and relisted items with new Vinted IDs "
+                "are detected automatically."
             )
         )
 
@@ -169,11 +169,13 @@ class VintedExportImportDialog(QDialog):
 
         safety_text = QLabel(
             (
-                "• Existing Vinted item IDs are skipped automatically.\n"
-                "• Only Vinted items that are not already stored are added.\n"
-                "• Existing categories, ISBNs, notes, priorities and edits "
+                "? Existing Vinted item IDs are skipped automatically.\n"
+                "? Relisted items with new Vinted IDs can be matched automatically.\n"
+                "? Price changes do not prevent a relisted item from matching.\n"
+                "? Exact title/details duplicates are skipped safely.\n"
+                "? Existing categories, ISBNs, notes, priorities and edits "
                 "are not overwritten.\n"
-                "• A safety backup is created before importing."
+                "? A safety backup is created before importing."
             )
         )
 
@@ -230,7 +232,7 @@ class VintedExportImportDialog(QDialog):
         )
 
         browse_button = QPushButton(
-            "CHOOSE EXPORT"
+            "SELECT & IMPORT"
         )
 
         browse_button.setObjectName(
@@ -375,6 +377,10 @@ class VintedExportImportDialog(QDialog):
             self._run_import
         )
 
+        # Selecting the export now starts the import directly,
+        # so a second Import button is unnecessary.
+        self.import_button.hide()
+
         buttons.addWidget(
             close_button
         )
@@ -429,10 +435,9 @@ class VintedExportImportDialog(QDialog):
 
         self.result_output.setPlainText(
             (
-                "Export selected.\n\n"
-                "Existing Vinted item IDs will be skipped.\n"
-                "Only previously unseen Vinted listings "
-                "will be added."
+                "Export selected. Import starting...\n\n"
+                "Existing IDs and detected relists will be skipped or matched.\n"
+                "Only genuinely new listings will be added."
             )
         )
 
@@ -448,28 +453,16 @@ class VintedExportImportDialog(QDialog):
             True
         )
 
+        # File selection is the confirmation.
+        # Start the safe import immediately.
+        self._run_import()
+
     def _run_import(
         self,
     ) -> None:
         if self.selected_file is None:
             return
 
-        confirmed = BrandedMessageDialog.ask(
-            self,
-            title="Import Vinted Data?",
-            message=(
-                f"Import from {self.selected_file.name}?\n\n"
-                "Known Vinted IDs will be skipped and relisted "
-                "items may be matched by title.\n\n"
-                "Your existing local edits will not be overwritten. "
-                "A safety backup will be created first."
-            ),
-            confirm_text="IMPORT",
-            cancel_text="CANCEL",
-        )
-
-        if not confirmed:
-            return
 
         self.import_button.setEnabled(
             False
@@ -708,6 +701,10 @@ class VintedExportImportDialog(QDialog):
         self.import_button.setEnabled(
             True
         )
+
+        # Return to the main application after the user
+        # acknowledges the successful import summary.
+        self.accept()
 
     def _update_progress(
         self,

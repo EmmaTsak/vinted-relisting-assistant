@@ -28,6 +28,9 @@ from app.services.photo_service import (
     get_listing_photos,
     get_thumbnail_path,
 )
+from app.ui.components.states.photo_fallback import (
+    show_photo_fallback,
+)
 from app.ui.image_cache import (
     get_scaled_pixmap,
 )
@@ -318,12 +321,8 @@ class ListingCard(QFrame):
             )
 
             if cover is None:
-                label.setText(
-                    "No Photo"
-                )
-
-                label.setObjectName(
-                    "noPhoto"
+                show_photo_fallback(
+                    label,
                 )
 
             else:
@@ -338,12 +337,9 @@ class ListingCard(QFrame):
                 )
 
                 if pixmap.isNull():
-                    label.setText(
-                        "No Preview"
-                    )
-
-                    label.setObjectName(
-                        "noPhoto"
+                    show_photo_fallback(
+                        label,
+                        preview_unavailable=True,
                     )
 
                 else:
@@ -352,12 +348,9 @@ class ListingCard(QFrame):
                     )
 
         except Exception:
-            label.setText(
-                "Photo Error"
-            )
-
-            label.setObjectName(
-                "noPhoto"
+            show_photo_fallback(
+                label,
+                preview_unavailable=True,
             )
 
         layout.addWidget(

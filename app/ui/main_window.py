@@ -969,6 +969,20 @@ class MainWindow(QMainWindow):
 
         dialog.exec()
 
+        # The modal import dialog has fully closed.
+        # Rebuild the visible page from the database now.
+        # Let Qt fully return control to the main window
+        # before rebuilding the visible inventory page.
+        page_name = self._current_page_name
+
+        QTimer.singleShot(
+            100,
+            lambda name=page_name: self._refresh_page_if_needed(
+                name,
+                force=True,
+            ),
+        )
+
     def open_relisting_preparation(
         self,
         listing_id: int,
@@ -1038,7 +1052,44 @@ class MainWindow(QMainWindow):
 
         dialog.exec()
 
-        self._schedule_current_page_refresh()
+        if (
+            self._current_page_name
+            == "All Listings"
+            and self.all_listings_page
+            is not None
+        ):
+            self.all_listings_page.refresh_silent()
+
+            self._dirty_pages.discard(
+                "All Listings"
+            )
+
+        elif (
+            self._current_page_name
+            == "Sold"
+            and self.sold_page
+            is not None
+        ):
+            self.sold_page.refresh_silent()
+
+            self._dirty_pages.discard(
+                "Sold"
+            )
+
+        elif (
+            self._current_page_name
+            == "Archived"
+            and self.archived_page
+            is not None
+        ):
+            self.archived_page.refresh_silent()
+
+            self._dirty_pages.discard(
+                "Archived"
+            )
+
+        else:
+            self._schedule_current_page_refresh()
 
     def _settings_saved(
         self,
@@ -1149,6 +1200,9 @@ class MainWindow(QMainWindow):
             )
 
         self._mark_listing_views_dirty()
+
+        # Refresh the page the user is currently viewing
+        # immediately after a successful import.
 
     def _preparation_relisted(
         self,
@@ -2099,6 +2153,20 @@ class MainWindow(QMainWindow):
 
             dialog.exec()
 
+            # The modal import dialog has fully closed.
+            # Rebuild the visible page from the database now.
+            # Let Qt fully return control to the main window
+            # before rebuilding the visible inventory page.
+            page_name = self._current_page_name
+
+            QTimer.singleShot(
+                100,
+                lambda name=page_name: self._refresh_page_if_needed(
+                    name,
+                    force=True,
+                ),
+            )
+
         except Exception:
             self.logger.exception(
                 "Unable to open Vinted Export importer"
@@ -2121,6 +2189,9 @@ class MainWindow(QMainWindow):
         Refresh listing views after a successful Vinted import.
         """
         self._mark_listing_views_dirty()
+
+        # Refresh the page the user is currently viewing
+        # immediately after a successful import.
 
         if self.last_saved_label is None:
             return

@@ -209,6 +209,10 @@ def _import_zip(
         relisted_title_candidates = (
             _existing_relisted_title_candidates()
         )
+        exact_detail_candidates = (
+            _existing_exact_detail_candidates()
+        )
+
 
         new_title_counts = (
             _new_export_title_counts(
@@ -280,6 +284,70 @@ def _import_zip(
 
                 continue
 
+            exact_detail_matches = (
+                _find_exact_detail_matches(
+                    listing,
+                    exact_detail_candidates,
+                )
+            )
+
+            if exact_detail_matches:
+                if len(
+                    exact_detail_matches
+                ) == 1:
+                    matched_listing_id = (
+                        exact_detail_matches[0]
+                    )
+
+                    try:
+                        _attach_relisted_vinted_id(
+                            matched_listing_id,
+                            listing.item_id,
+                        )
+
+                    except Exception as exc:
+                        result.skipped_existing += 1
+
+                        result.warnings.append(
+                            (
+                                f"{listing.title}: exact title/details "
+                                "duplicate already exists locally, "
+                                "but its new Vinted ID could not be "
+                                f"attached: {exc}"
+                            )
+                        )
+
+                        continue
+
+                    existing_ids.add(
+                        listing.item_id
+                    )
+
+                    result.skipped_existing += 1
+
+                    result.warnings.append(
+                        (
+                            f"{listing.title}: exact title/details "
+                            "duplicate matched an existing listing. "
+                            "Its new Vinted ID was attached and no "
+                            "duplicate listing was created."
+                        )
+                    )
+
+                    continue
+
+                result.skipped_existing += 1
+
+                result.warnings.append(
+                    (
+                        f"{listing.title}: multiple identical local "
+                        "listings already exist. The incoming Vinted "
+                        "item was skipped to avoid another duplicate."
+                    )
+                )
+
+                continue
+
             if _has_ambiguous_relist_title_match(
                 listing,
                 relisted_title_candidates,
@@ -308,6 +376,15 @@ def _import_zip(
                 continue
 
             result.imported += 1
+            exact_detail_candidates.setdefault(
+                _vinted_stable_signature(
+                    listing
+                ),
+                [],
+            ).append(
+                listing_id
+            )
+
             existing_ids.add(
                 listing.item_id
             )
@@ -483,6 +560,10 @@ def _import_html_folder(
     relisted_title_candidates = (
         _existing_relisted_title_candidates()
     )
+    exact_detail_candidates = (
+        _existing_exact_detail_candidates()
+    )
+
 
     new_title_counts = (
         _new_export_title_counts(
@@ -544,6 +625,70 @@ def _import_html_folder(
 
             continue
 
+        exact_detail_matches = (
+            _find_exact_detail_matches(
+                listing,
+                exact_detail_candidates,
+            )
+        )
+
+        if exact_detail_matches:
+            if len(
+                exact_detail_matches
+            ) == 1:
+                matched_listing_id = (
+                    exact_detail_matches[0]
+                )
+
+                try:
+                    _attach_relisted_vinted_id(
+                        matched_listing_id,
+                        listing.item_id,
+                    )
+
+                except Exception as exc:
+                    result.skipped_existing += 1
+
+                    result.warnings.append(
+                        (
+                            f"{listing.title}: exact title/details "
+                            "duplicate already exists locally, "
+                            "but its new Vinted ID could not be "
+                            f"attached: {exc}"
+                        )
+                    )
+
+                    continue
+
+                existing_ids.add(
+                    listing.item_id
+                )
+
+                result.skipped_existing += 1
+
+                result.warnings.append(
+                    (
+                        f"{listing.title}: exact title/details "
+                        "duplicate matched an existing listing. "
+                        "Its new Vinted ID was attached and no "
+                        "duplicate listing was created."
+                    )
+                )
+
+                continue
+
+            result.skipped_existing += 1
+
+            result.warnings.append(
+                (
+                    f"{listing.title}: multiple identical local "
+                    "listings already exist. The incoming Vinted "
+                    "item was skipped to avoid another duplicate."
+                )
+            )
+
+            continue
+
         if _has_ambiguous_relist_title_match(
             listing,
             relisted_title_candidates,
@@ -572,6 +717,15 @@ def _import_html_folder(
             continue
 
         result.imported += 1
+        exact_detail_candidates.setdefault(
+            _vinted_stable_signature(
+                listing
+            ),
+            [],
+        ).append(
+            listing_id
+        )
+
 
         existing_ids.add(
             listing.item_id
@@ -917,17 +1071,135 @@ def _normalize_vinted_title(
     )
 
 
+def _normalize_vinted_detail(
+    value: object,
+) -> str:
+    """
+    Normalize stable metadata for conservative duplicate matching.
+    """
+    if value is None:
+        return ""
+
+    return " ".join(
+        str(
+            value
+        ).casefold().split()
+    )
+
+
+def _vinted_stable_signature(
+    listing: VintedExportListing,
+) -> tuple[str, ...]:
+    """
+    Fields expected to describe the same physical listing.
+
+    Price, dates, sold/hidden state, views, favourites and relist
+    information are intentionally excluded because they can change.
+    """
+    return tuple(
+        _normalize_vinted_detail(
+            value
+        )
+        for value in (
+            listing.title,
+            listing.description,
+            listing.currency,
+            listing.brand,
+            listing.size,
+            listing.condition,
+            listing.colour,
+            listing.material,
+            listing.parcel_size,
+        )
+    )
+
+
+def _local_stable_signature(
+    listing: object,
+) -> tuple[str, ...]:
+    return tuple(
+        _normalize_vinted_detail(
+            getattr(
+                listing,
+                field,
+                None,
+            )
+        )
+        for field in (
+            "title",
+            "description",
+            "currency",
+            "brand",
+            "size",
+            "condition",
+            "colour",
+            "material",
+            "parcel_size",
+        )
+    )
+
+
+def _existing_exact_detail_candidates(
+) -> dict[tuple[str, ...], list[int]]:
+    """
+    Group local listings by normalized title + stable metadata.
+    """
+    candidates: dict[
+        tuple[str, ...],
+        list[int],
+    ] = {}
+
+    for listing in get_all_listings():
+        signature = (
+            _local_stable_signature(
+                listing
+            )
+        )
+
+        candidates.setdefault(
+            signature,
+            [],
+        ).append(
+            listing.id
+        )
+
+    return candidates
+
+
+def _find_exact_detail_matches(
+    listing: VintedExportListing,
+    candidates: dict[
+        tuple[str, ...],
+        list[int],
+    ],
+) -> list[int]:
+    return list(
+        candidates.get(
+            _vinted_stable_signature(
+                listing
+            ),
+            [],
+        )
+    )
+
+
 def _existing_relisted_title_candidates(
 ) -> dict[str, list[int]]:
     """
-    Return existing Vinted-imported listings that are eligible
-    to represent a manually relisted item.
+    Return existing Vinted-imported listings grouped by their
+    normalized exact title.
 
-    A listing is eligible only when:
-    - it already has at least one Vinted export item ID;
-    - it has actually been marked as relisted locally;
-    - it is not sold;
-    - it is not archived.
+    Despite the legacy function name, candidates do not need to
+    have been manually marked as relisted inside the app.
+
+    This is important when comparing an older Vinted export with
+    a newer one: a relisted Vinted item receives a new Vinted ID,
+    but the local copy from the older export may never have been
+    explicitly marked as relisted.
+
+    Only listings that already contain a Vinted export item-ID
+    marker are considered, so ordinary manually-created listings
+    are not automatically absorbed into Vinted relist matching.
     """
     candidates: dict[
         str,
@@ -940,27 +1212,12 @@ def _existing_relisted_title_candidates(
             or ""
         )
 
+        # Only listings known to have come from Vinted.
         if (
             EXISTING_ID_PATTERN.search(
                 notes
             )
             is None
-        ):
-            continue
-
-        if (
-            listing.last_relisted_date
-            is None
-            and (
-                listing.number_of_times_relisted
-                or 0
-            ) <= 0
-        ):
-            continue
-
-        if (
-            listing.sold
-            or listing.archived
         ):
             continue
 
@@ -981,6 +1238,8 @@ def _existing_relisted_title_candidates(
         )
 
     return candidates
+
+
 
 
 def _new_export_title_counts(

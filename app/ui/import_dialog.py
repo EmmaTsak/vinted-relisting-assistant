@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import (
+    QObject,
+    QThread,
     Qt,
     Signal,
 )
@@ -34,13 +36,49 @@ from app.ui.components.dialogs.message_dialog import (
 )
 
 
+class ImportListingsWorker(QObject):
+    """
+    Run the generic CSV / JSON importer outside the Qt UI thread.
+    """
+
+    completed = Signal(object)
+    failed = Signal(object)
+
+    def __init__(
+        self,
+        file_path: Path,
+    ) -> None:
+        super().__init__()
+
+        self.file_path = file_path
+
+    def run(
+        self,
+    ) -> None:
+        try:
+            result = import_listings_file(
+                self.file_path
+            )
+
+        except Exception as exc:
+            self.failed.emit(
+                exc
+            )
+
+            return
+
+        self.completed.emit(
+            result
+        )
+
+
 class ImportListingsDialog(QDialog):
     """
     Generic CSV / JSON listing importer.
 
-    Important:
-    This importer does not have the Vinted item-ID duplicate
-    protection used by the dedicated Vinted data importer.
+    Existing matching listings are skipped automatically.
+    Vinted exports should still use the dedicated Vinted importer
+    for Vinted item-ID and relist matching.
     """
 
     import_completed = Signal(int)
@@ -56,6 +94,9 @@ class ImportListingsDialog(QDialog):
         )
 
         self.selected_file: Path | None = None
+
+        self._import_thread: QThread | None = None
+        self._import_worker: ImportListingsWorker | None = None
 
         self.setWindowTitle(
             "Import CSV / JSON"
@@ -79,12 +120,12 @@ class ImportListingsDialog(QDialog):
 
         fit_dialog_to_screen(
             self,
-            preferred_width=740,
-            preferred_height=620,
-            minimum_width=600,
-            minimum_height=460,
-            width_ratio=0.88,
-            height_ratio=0.82,
+            preferred_width=780,
+            preferred_height=780,
+            minimum_width=660,
+            minimum_height=650,
+            width_ratio=0.92,
+            height_ratio=0.90,
         )
 
         self._apply_styles()
@@ -147,6 +188,7 @@ class ImportListingsDialog(QDialog):
         # -------------------------------------------------
 
         file_section = QFrame()
+
 
         file_section.setObjectName(
             "informationBox"
@@ -236,6 +278,17 @@ class ImportListingsDialog(QDialog):
             "No import file selected."
         )
 
+        self.status_label.setMinimumHeight(
+            26
+        )
+
+        self.status_label.setContentsMargins(
+            2,
+            4,
+            0,
+            0,
+        )
+
         self.status_label.setObjectName(
             "informationText"
         )
@@ -257,6 +310,7 @@ class ImportListingsDialog(QDialog):
         # -------------------------------------------------
 
         format_section = QFrame()
+
 
         format_section.setObjectName(
             "informationBox"
@@ -287,14 +341,9 @@ class ImportListingsDialog(QDialog):
 
         information = QLabel(
             (
-                "Required fields:\n"
-                "• title\n"
-                "• price\n\n"
-                "JSON files can also contain a photos array:\n"
-                '\"photos\": [\"photo1.jpg\", \"photo2.jpg\"]\n\n'
-                "Relative photo paths are resolved from the "
-                "location of the JSON file. Imported photos are "
-                "copied into the assistant's own local storage."
+                "Required: title and price. "
+                "Other listing fields are imported when present.\n"
+                "JSON imports can also include a local photos array."
             )
         )
 
@@ -328,13 +377,12 @@ class ImportListingsDialog(QDialog):
 
         warning = QLabel(
             (
-                "Generic CSV / JSON imports do not use Vinted "
-                "item-ID duplicate detection.\n\n"
-                "Importing the same file more than once may create "
-                "duplicate listings. For Vinted personal-data exports, "
-                "use IMPORT VINTED DATA EXPORT instead."
+                "Existing matching listings are skipped automatically. "
+                "For Vinted personal-data exports, use IMPORT VINTED "
+                "DATA EXPORT for Vinted ID and relist matching."
             )
         )
+
 
         warning.setWordWrap(
             True
@@ -375,7 +423,11 @@ class ImportListingsDialog(QDialog):
         )
 
         self.result_output.setMinimumHeight(
-            150
+            120
+        )
+
+        self.result_output.setMaximumHeight(
+            190
         )
 
         layout.addWidget(
@@ -391,6 +443,13 @@ class ImportListingsDialog(QDialog):
 
         buttons.setSpacing(
             8
+        )
+
+        buttons.setContentsMargins(
+            0,
+            8,
+            0,
+            0,
         )
 
         buttons.addStretch()
@@ -519,7 +578,7 @@ class ImportListingsDialog(QDialog):
             (
                 "File selected successfully.\n\n"
                 f"{path}\n\n"
-                "Review the duplicate warning above, "
+                "Review the import details above, "
                 "then choose IMPORT LISTINGS."
             )
         )
@@ -538,14 +597,20 @@ class ImportListingsDialog(QDialog):
         if self.selected_file is None:
             return
 
+        if (
+            self._import_thread is not None
+            and self._import_thread.isRunning()
+        ):
+            return
+
         confirmed = BrandedMessageDialog.ask(
             self,
             title="Confirm Import",
             message=(
                 f"Import listings from {self.selected_file.name}?\n\n"
                 "Existing listings will not be deleted. "
-                "Generic CSV / JSON imports do not have "
-                "Vinted item-ID duplicate protection."
+                "Listings that already exist in your local inventory "
+                "will be skipped automatically."
             ),
             confirm_text="IMPORT",
             cancel_text="CANCEL",
@@ -563,69 +628,66 @@ class ImportListingsDialog(QDialog):
         )
 
         self.result_output.setPlainText(
-            "Importing..."
+            (
+                "Importing listings and photos...\n\n"
+                "You can continue to see the app responding "
+                "while the import runs."
+            )
         )
 
-        try:
-            result = (
-                import_listings_file(
-                    self.selected_file
-                )
-            )
+        thread = QThread(
+            self
+        )
 
-        except ImportFileError as exc:
-            message = str(exc)
+        worker = ImportListingsWorker(
+            self.selected_file
+        )
 
-            BrandedMessageDialog.error(
-                self,
-                title="Import Failed",
-                message=message,
-            )
+        worker.moveToThread(
+            thread
+        )
 
-            self.status_label.setText(
-                "Import failed."
-            )
+        thread.started.connect(
+            worker.run
+        )
 
-            self.result_output.setPlainText(
-                message
-            )
+        worker.completed.connect(
+            self._import_succeeded
+        )
 
-            self.import_button.setEnabled(
-                True
-            )
+        worker.failed.connect(
+            self._import_failed
+        )
 
-            return
+        worker.completed.connect(
+            thread.quit
+        )
 
-        except Exception as exc:
-            show_logged_error(
-                self,
-                title="Import Failed",
-                message=(
-                    "The listings could not be imported."
-                ),
-                context=(
-                    "Unexpected CSV / JSON import failure"
-                ),
-                exception=exc,
-            )
+        worker.failed.connect(
+            thread.quit
+        )
 
-            self.status_label.setText(
-                "Import failed."
-            )
+        worker.completed.connect(
+            worker.deleteLater
+        )
 
-            self.result_output.setPlainText(
-                (
-                    "The import could not be completed.\n\n"
-                    "Technical details were saved to the app log."
-                )
-            )
+        worker.failed.connect(
+            worker.deleteLater
+        )
 
-            self.import_button.setEnabled(
-                True
-            )
+        thread.finished.connect(
+            self._import_thread_finished
+        )
 
-            return
+        self._import_thread = thread
+        self._import_worker = worker
 
+        thread.start()
+
+    def _import_succeeded(
+        self,
+        result,
+    ) -> None:
         lines = [
             "IMPORT COMPLETE",
             "",
@@ -644,6 +706,10 @@ class ImportListingsDialog(QDialog):
             (
                 "Photos imported:     "
                 f"{result.photos_imported}"
+            ),
+            (
+                "Warnings:            "
+                f"{len(result.warnings)}"
             ),
         ]
 
@@ -689,16 +755,13 @@ class ImportListingsDialog(QDialog):
 
         self.status_label.setText(
             (
-                "Finished — "
+                "Finished ? "
                 f"{result.imported_count} listing(s) imported, "
                 f"{result.skipped_count} skipped."
             )
         )
 
-        if (
-            result.imported_count
-            > 0
-        ):
+        if result.imported_count > 0:
             self.import_completed.emit(
                 result.imported_count
             )
@@ -712,13 +775,146 @@ class ImportListingsDialog(QDialog):
                 "Photos imported: "
                 f"{result.photos_imported}\n"
                 "Listings skipped: "
-                f"{result.skipped_count}"
+                f"{result.skipped_count}\n"
+                "Warnings: "
+                f"{len(result.warnings)}"
             ),
         )
 
-        self.import_button.setEnabled(
-            True
+        # Return to the main application after the user
+        # acknowledges the successful import summary.
+        self._close_after_import = True
+
+        if (
+            self._import_thread is None
+            or not self._import_thread.isRunning()
+        ):
+            self._close_after_import = False
+            self.accept()
+
+    def _import_failed(
+        self,
+        exc: object,
+    ) -> None:
+        if isinstance(
+            exc,
+            ImportFileError,
+        ):
+            message = str(
+                exc
+            )
+
+            BrandedMessageDialog.error(
+                self,
+                title="Import Failed",
+                message=message,
+            )
+
+            self.status_label.setText(
+                "Import failed."
+            )
+
+            self.result_output.setPlainText(
+                message
+            )
+
+            return
+
+        if isinstance(
+            exc,
+            Exception,
+        ):
+            show_logged_error(
+                self,
+                title="Import Failed",
+                message=(
+                    "The listings could not be imported."
+                ),
+                context=(
+                    "Unexpected CSV / JSON import failure"
+                ),
+                exception=exc,
+            )
+
+        else:
+            BrandedMessageDialog.error(
+                self,
+                title="Import Failed",
+                message=(
+                    "The listings could not be imported."
+                ),
+            )
+
+        self.status_label.setText(
+            "Import failed."
         )
+
+        self.result_output.setPlainText(
+            (
+                "The import could not be completed.\n\n"
+                "Technical details were saved to the app log."
+            )
+        )
+
+    def _import_thread_finished(
+        self,
+    ) -> None:
+        thread = self._import_thread
+
+        self._import_thread = None
+        self._import_worker = None
+
+        self.import_button.setEnabled(
+            self.selected_file is not None
+        )
+
+        if thread is not None:
+            thread.deleteLater()
+
+        if getattr(
+            self,
+            "_close_after_import",
+            False,
+        ):
+            self._close_after_import = False
+            self.accept()
+
+    def reject(
+        self,
+    ) -> None:
+        if (
+            self._import_thread is not None
+            and self._import_thread.isRunning()
+        ):
+            BrandedMessageDialog.notice(
+                self,
+                title="Import in Progress",
+                message=(
+                    "The import is still running. "
+                    "Keep this window open until it finishes."
+                ),
+            )
+
+            return
+
+        super().reject()
+
+    def closeEvent(
+        self,
+        event,
+    ) -> None:
+        if (
+            self._import_thread is not None
+            and self._import_thread.isRunning()
+        ):
+            event.ignore()
+
+            return
+
+        super().closeEvent(
+            event
+        )
+
 
     def _apply_styles(
         self,
