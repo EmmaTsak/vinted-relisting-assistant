@@ -39,6 +39,35 @@ from app.ui.components.dialogs.message_dialog import (
 )
 
 
+SUCCESSFUL_EXACT_DUPLICATE_MARKER = (
+    "duplicate matched an existing listing."
+)
+
+
+def _split_vinted_warnings(
+    warnings: list[str] | None,
+) -> tuple[int, list[str]]:
+    exact_duplicate_matches = 0
+    display_warnings: list[str] = []
+
+    for warning in warnings or []:
+        if (
+            SUCCESSFUL_EXACT_DUPLICATE_MARKER
+            in warning
+        ):
+            exact_duplicate_matches += 1
+            continue
+
+        display_warnings.append(
+            warning
+        )
+
+    return (
+        exact_duplicate_matches,
+        display_warnings,
+    )
+
+
 class VintedExportImportDialog(QDialog):
     """
     Safe incremental importer for a Vinted personal-data export.
@@ -594,6 +623,13 @@ class VintedExportImportDialog(QDialog):
 
             return
 
+        (
+            exact_duplicate_matches,
+            display_warnings,
+        ) = _split_vinted_warnings(
+            result.warnings
+        )
+
         self.progress_bar.setValue(
             100
         )
@@ -614,12 +650,16 @@ class VintedExportImportDialog(QDialog):
                 f"{result.imported}"
             ),
             (
-                "Existing IDs skipped:  "
+                "Existing / duplicate skipped: "
                 f"{result.skipped_existing}"
             ),
             (
-                "Relisted title matches:"
-                f" {result.relisted_matched}"
+                "Relisted title matches:      "
+                f"{result.relisted_matched}"
+            ),
+            (
+                "Exact duplicates matched:    "
+                f"{exact_duplicate_matches}"
             ),
             (
                 "Photos imported:       "
@@ -635,7 +675,7 @@ class VintedExportImportDialog(QDialog):
             ),
             (
                 "Warnings:              "
-                f"{len(result.warnings)}"
+                f"{len(display_warnings)}"
             ),
             "",
             "Safety backup:",
@@ -644,7 +684,7 @@ class VintedExportImportDialog(QDialog):
             ),
         ]
 
-        if result.warnings:
+        if display_warnings:
             lines.extend(
                 [
                     "",
@@ -653,7 +693,7 @@ class VintedExportImportDialog(QDialog):
                 ]
             )
 
-            for warning in result.warnings:
+            for warning in display_warnings:
                 lines.append(
                     f"- {warning}"
                 )
@@ -691,10 +731,11 @@ class VintedExportImportDialog(QDialog):
             title="Vinted Import Complete",
             message=(
                 f"New listings imported: {result.imported}\n"
-                f"Existing IDs skipped: {result.skipped_existing}\n"
+                f"Existing / duplicate skipped: {result.skipped_existing}\n"
                 f"Relisted matched by title: {result.relisted_matched}\n"
+                f"Exact duplicates matched: {exact_duplicate_matches}\n"
                 f"Photos imported: {result.photos_imported}\n"
-                f"Warnings: {len(result.warnings)}"
+                f"Warnings: {len(display_warnings)}"
             ),
         )
 
