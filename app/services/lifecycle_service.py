@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import shutil
 from datetime import date, timedelta
+from pathlib import Path
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -154,6 +156,85 @@ def set_queue_excluded(
         listing.manually_excluded = excluded
 
 
+def _stage_listing_directory(
+    listing_directory: Path,
+) -> Path | None:
+    """
+    Move an assistant-owned listing directory aside before deleting
+    the database row.
+
+    Renaming within the same parent directory is intentionally used
+    instead of deleting photos first. This gives the delete workflow
+    a recovery point if the database transaction later fails.
+    """
+    if not listing_directory.exists():
+        return None
+
+    staged_directory = (
+        listing_directory.with_name(
+            (
+                f".{listing_directory.name}"
+                ".delete-pending-"
+                f"{uuid4().hex}"
+            )
+        )
+    )
+
+    try:
+        listing_directory.replace(
+            staged_directory
+        )
+
+    except OSError as exc:
+        raise LifecycleError(
+            (
+                "Permanent delete was cancelled because the "
+                "local listing directory could not be prepared "
+                "safely. No listing data was removed.\n\n"
+                f"{exc}"
+            )
+        ) from exc
+
+    return staged_directory
+
+
+def _restore_staged_listing_directory(
+    staged_directory: Path,
+    listing_directory: Path,
+) -> None:
+    """
+    Restore a staged listing directory when the database delete fails.
+    """
+    if not staged_directory.exists():
+        return
+
+    if listing_directory.exists():
+        raise LifecycleError(
+            (
+                "The database delete failed and the staged photo "
+                "directory could not be restored automatically "
+                "because the original directory already exists.\n\n"
+                f"Staged directory:\n{staged_directory}"
+            )
+        )
+
+    try:
+        staged_directory.replace(
+            listing_directory
+        )
+
+    except OSError as exc:
+        raise LifecycleError(
+            (
+                "The database delete failed and the local listing "
+                "directory could not be restored automatically. "
+                "The staged photos have been preserved at:\n"
+                f"{staged_directory}\n\n"
+                f"{exc}"
+            )
+        ) from exc
+
+
 def delete_permanently(
     listing_id: int,
 ) -> None:
@@ -162,50 +243,81 @@ def delete_permanently(
 
     A listing MUST be archived first.
 
-    Database information and the assistant-owned listing directory
-    are deleted. External/original source photos are never touched.
+    The assistant-owned local listing directory is staged before the
+    database transaction. If the transaction fails, that directory is
+    restored. External/original source photos are never touched.
     """
     listing_directory = get_listing_directory(
         listing_id
     )
 
-    with session_scope() as session:
-        listing = _get_listing(
-            session,
-            listing_id,
-        )
+    staged_directory: Path | None = None
 
-        if (
-            not listing.archived
-            or listing.status
-            != ListingStatus.ARCHIVED
-        ):
-            raise InvalidLifecycleActionError(
-                (
-                    "A listing must be archived before "
-                    "it can be permanently deleted."
+    try:
+        with session_scope() as session:
+            listing = _get_listing(
+                session,
+                listing_id,
+            )
+
+            if (
+                not listing.archived
+                or listing.status
+                != ListingStatus.ARCHIVED
+            ):
+                raise InvalidLifecycleActionError(
+                    (
+                        "A listing must be archived before "
+                        "it can be permanently deleted."
+                    )
+                )
+
+            staged_directory = (
+                _stage_listing_directory(
+                    listing_directory
                 )
             )
 
-        session.delete(
-            listing
-        )
-
-    if listing_directory.exists():
-        try:
-            shutil.rmtree(
-                listing_directory
+            session.delete(
+                listing
             )
 
-        except OSError as exc:
-            raise LifecycleError(
-                (
-                    "The listing was removed from the database, "
-                    "but its local photo directory could not "
-                    f"be deleted:\n{exc}"
+    except Exception as exc:
+        if staged_directory is not None:
+            try:
+                _restore_staged_listing_directory(
+                    staged_directory,
+                    listing_directory,
                 )
-            ) from exc
 
+            except LifecycleError as restore_exc:
+                raise restore_exc from exc
+
+        raise
+
+    if (
+        staged_directory is None
+        or not staged_directory.exists()
+    ):
+        return
+
+    try:
+        shutil.rmtree(
+            staged_directory
+        )
+
+    except OSError as exc:
+        raise LifecycleError(
+            (
+                "The listing was removed from the database, "
+                "but its staged local photo directory could not "
+                "be cleaned up. The photos were preserved at:\n"
+                f"{staged_directory}\n\n"
+                "You can remove that folder manually after "
+                "confirming the listing is gone from the app.\n\n"
+                f"{exc}"
+            )
+        ) from exc
 
 def get_sold_listings() -> list[Listing]:
     """
