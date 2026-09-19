@@ -19,6 +19,9 @@ from app.models import (
 from app.services.photo_service import (
     import_photos,
 )
+from app.services.listing_service import (
+    normalize_isbn,
+)
 
 
 class ImportFileError(Exception):
@@ -98,6 +101,30 @@ def _signature_text(
     ).casefold()
 
 
+def _normalize_currency(
+    value: Any,
+) -> str:
+    currency = (
+        _optional_text(
+            value
+        )
+        or "EUR"
+    ).upper()
+
+    if (
+        len(currency) != 3
+        or not currency.isalpha()
+    ):
+        raise ValueError(
+            (
+                "Currency must be a three-letter "
+                "alphabetic code such as EUR."
+            )
+        )
+
+    return currency
+
+
 def _import_signature_from_row(
     row: dict[str, Any],
 ) -> tuple[Any, ...]:
@@ -114,14 +141,11 @@ def _import_signature_from_row(
         )
     )
 
-    currency = (
-        _optional_text(
-            row.get(
-                "currency"
-            )
+    currency = _normalize_currency(
+        row.get(
+            "currency"
         )
-        or "EUR"
-    ).upper()
+    )
 
     values = {
         "title": title,
@@ -175,9 +199,11 @@ def _import_signature_from_row(
                 "parcel_size"
             )
         ),
-        "isbn": _optional_text(
-            row.get(
-                "isbn"
+        "isbn": normalize_isbn(
+            _optional_text(
+                row.get(
+                    "isbn"
+                )
             )
         ),
         "notes": (
@@ -290,9 +316,10 @@ def import_listings_file(
         )
     )
 
-    # Snapshot only listings that existed BEFORE this import.
-    # This prevents importing the same file again while still
-    # allowing intentionally identical rows inside one file.
+    # Start with listings that already exist locally, then add
+    # each successfully imported signature to this same set.
+    # This prevents duplicates both across repeated imports and
+    # inside a single CSV/JSON file.
     existing_import_signatures = (
         _load_existing_import_signatures()
     )
@@ -322,8 +349,8 @@ def import_listings_file(
                     ImportRowWarning(
                         row_number=row_number,
                         message=(
-                            "Duplicate already exists in "
-                            "your local inventory. "
+                            "Duplicate already exists locally "
+                            "or appeared earlier in this import. "
                             "This row was skipped."
                         ),
                     )
@@ -345,6 +372,10 @@ def import_listings_file(
                 _import_single_listing(
                     normalized
                 )
+            )
+
+            existing_import_signatures.add(
+                import_signature
             )
 
             result.imported_ids.append(
@@ -607,6 +638,82 @@ def _parse_photos(
     return paths
 
 
+def _normalize_import_lifecycle(
+    *,
+    status: ListingStatus,
+    sold: bool,
+    archived: bool,
+    paused_until: date | None,
+    paused_indefinitely: bool,
+) -> tuple[
+    ListingStatus,
+    bool,
+    bool,
+    date | None,
+    bool,
+]:
+    """
+    Convert imported lifecycle fields into one internally
+    consistent state.
+
+    Legacy exports may contain overlapping booleans such as both
+    sold=True and archived=True. Precedence remains Sold, Archived,
+    Paused, Active, but incompatible flags are cleared.
+    """
+    if sold:
+        status = ListingStatus.SOLD
+
+    elif archived:
+        status = ListingStatus.ARCHIVED
+
+    elif (
+        paused_indefinitely
+        or paused_until is not None
+    ):
+        status = ListingStatus.PAUSED
+
+    if status == ListingStatus.SOLD:
+        return (
+            ListingStatus.SOLD,
+            True,
+            False,
+            None,
+            False,
+        )
+
+    if status == ListingStatus.ARCHIVED:
+        return (
+            ListingStatus.ARCHIVED,
+            False,
+            True,
+            None,
+            False,
+        )
+
+    if status == ListingStatus.PAUSED:
+        if (
+            paused_until is None
+            and not paused_indefinitely
+        ):
+            paused_indefinitely = True
+
+        return (
+            ListingStatus.PAUSED,
+            False,
+            False,
+            paused_until,
+            paused_indefinitely,
+        )
+
+    return (
+        ListingStatus.ACTIVE,
+        False,
+        False,
+        None,
+        False,
+    )
+
+
 def _import_single_listing(
     row: dict[str, Any],
 ) -> int:
@@ -637,24 +744,19 @@ def _import_single_listing(
             "Price must be greater than 0."
         )
 
-    currency = (
+    currency = _normalize_currency(
+        row.get(
+            "currency"
+        )
+    )
+
+    isbn = normalize_isbn(
         _optional_text(
             row.get(
-                "currency"
+                "isbn"
             )
         )
-        or "EUR"
-    ).upper()
-
-    if len(
-        currency
-    ) != 3:
-        raise ValueError(
-            (
-                "Currency must be a "
-                "three-letter code such as EUR."
-            )
-        )
+    )
 
     original_created_date = (
         _parse_date(
@@ -741,36 +843,19 @@ def _import_single_listing(
         )
     )
 
-    if sold:
-        status = (
-            ListingStatus.SOLD
-        )
-
-    elif archived:
-        status = (
-            ListingStatus.ARCHIVED
-        )
-
-    elif (
-        paused_indefinitely
-        or paused_until
-        is not None
-    ):
-        status = (
-            ListingStatus.PAUSED
-        )
-
-    if (
-        status
-        == ListingStatus.SOLD
-    ):
-        sold = True
-
-    if (
-        status
-        == ListingStatus.ARCHIVED
-    ):
-        archived = True
+    (
+        status,
+        sold,
+        archived,
+        paused_until,
+        paused_indefinitely,
+    ) = _normalize_import_lifecycle(
+        status=status,
+        sold=sold,
+        archived=archived,
+        paused_until=paused_until,
+        paused_indefinitely=paused_indefinitely,
+    )
 
     with session_scope() as session:
         listing = Listing(
@@ -818,6 +903,7 @@ def _import_single_listing(
                     "parcel_size"
                 )
             ),
+            isbn=isbn,
             notes=(
                 _optional_text(
                     row.get(

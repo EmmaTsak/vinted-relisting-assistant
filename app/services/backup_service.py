@@ -509,26 +509,9 @@ def restore_backup(
                 )
             )
 
-            target.parent.mkdir(
-                parents=True,
-                exist_ok=True,
-            )
-
-            temporary_target = (
-                target.parent
-                / (
-                    f".{target.name}"
-                    ".restore_tmp"
-                )
-            )
-
-            shutil.copy2(
+            _atomic_copy(
                 source,
-                temporary_target,
-            )
-
-            temporary_target.replace(
-                target
+                target,
             )
 
             photos_restored += 1
@@ -597,6 +580,9 @@ def validate_backup(
 ) -> dict:
     """
     Validate the manifest, settings and SQLite database.
+
+    Manifest file references are required to remain inside the
+    selected backup folder before any restore operation can start.
     """
     backup_directory = Path(
         backup_path
@@ -605,6 +591,11 @@ def validate_backup(
     if not backup_directory.exists():
         raise InvalidBackupError(
             "The selected backup folder does not exist."
+        )
+
+    if not backup_directory.is_dir():
+        raise InvalidBackupError(
+            "The selected backup path is not a folder."
         )
 
     manifest = _read_manifest(
@@ -624,36 +615,20 @@ def validate_backup(
             )
         )
 
-    database_filename = (
+    database_path = _resolve_backup_member(
+        backup_directory,
         manifest.get(
             "database_file"
-        )
+        ),
+        "database file",
     )
 
-    settings_filename = (
+    settings_path = _resolve_backup_member(
+        backup_directory,
         manifest.get(
             "settings_file"
-        )
-    )
-
-    if not database_filename:
-        raise InvalidBackupError(
-            "The backup does not identify a database file."
-        )
-
-    if not settings_filename:
-        raise InvalidBackupError(
-            "The backup does not identify a settings file."
-        )
-
-    database_path = (
-        backup_directory
-        / database_filename
-    )
-
-    settings_path = (
-        backup_directory
-        / settings_filename
+        ),
+        "settings file",
     )
 
     if not database_path.exists():
@@ -672,6 +647,11 @@ def validate_backup(
 
     _validate_settings_file(
         settings_path
+    )
+
+    _validate_manifest_photo_paths(
+        backup_directory,
+        manifest,
     )
 
     return manifest
@@ -838,6 +818,115 @@ def _read_manifest(
     return manifest
 
 
+def _resolve_backup_member(
+    backup_directory: Path,
+    value: object,
+    description: str,
+) -> Path:
+    """
+    Resolve one file referenced by manifest.json while ensuring
+    it remains inside the selected backup directory.
+    """
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+    ):
+        raise InvalidBackupError(
+            (
+                f"The backup {description} "
+                "has an invalid path."
+            )
+        )
+
+    relative_path = Path(
+        value
+    )
+
+    if relative_path.is_absolute():
+        raise InvalidBackupError(
+            (
+                f"The backup {description} must use "
+                "a relative path inside the backup folder."
+            )
+        )
+
+    backup_root = (
+        backup_directory.resolve()
+    )
+
+    resolved = (
+        backup_root
+        / relative_path
+    ).resolve()
+
+    try:
+        resolved.relative_to(
+            backup_root
+        )
+
+    except ValueError as exc:
+        raise InvalidBackupError(
+            (
+                f"The backup {description} points "
+                "outside the backup folder."
+            )
+        ) from exc
+
+    return resolved
+
+
+def _validate_manifest_photo_paths(
+    backup_directory: Path,
+    manifest: dict,
+) -> None:
+    """
+    Validate backup-side photo references before restore starts.
+
+    Missing backed-up photos remain allowed because restore_backup()
+    already reports those as warnings. Unsafe paths are rejected.
+    """
+    photos = manifest.get(
+        "photos",
+        [],
+    )
+
+    if not isinstance(
+        photos,
+        list,
+    ):
+        raise InvalidBackupError(
+            (
+                "The backup photo manifest "
+                "has an invalid format."
+            )
+        )
+
+    for entry in photos:
+        if not isinstance(
+            entry,
+            dict,
+        ):
+            raise InvalidBackupError(
+                (
+                    "The backup photo manifest "
+                    "contains an invalid entry."
+                )
+            )
+
+        backup_file = entry.get(
+            "backup_file"
+        )
+
+        if backup_file is None:
+            continue
+
+        _resolve_backup_member(
+            backup_directory,
+            backup_file,
+            "photo file",
+        )
+
+
 def _validate_database(
     database_path: Path,
 ) -> None:
@@ -937,11 +1026,11 @@ def _validate_settings_file(
     settings = AppSettings(
         daily_relist_limit=raw.get(
             "daily_relist_limit",
-            3,
+            50,
         ),
         minimum_relist_age_days=raw.get(
             "minimum_relist_age_days",
-            30,
+            14,
         ),
         vinted_url=raw.get(
             "vinted_url",
@@ -994,17 +1083,39 @@ def _atomic_copy(
         )
     )
 
-    shutil.copy2(
-        source,
-        temporary,
-    )
+    try:
+        temporary.unlink(
+            missing_ok=True
+        )
 
-    temporary.replace(
-        destination
-    )
+        shutil.copy2(
+            source,
+            temporary,
+        )
+
+        temporary.replace(
+            destination
+        )
+
+    except Exception:
+        try:
+            temporary.unlink(
+                missing_ok=True
+            )
+
+        except OSError:
+            pass
+
+        raise
 
 
 def _remove_sqlite_sidecars() -> None:
+    """
+    Remove SQLite WAL/journal sidecar files before replacing the
+    database. Failure is treated as a restore error instead of being
+    silently ignored because stale sidecars can make a restored
+    database unsafe to open.
+    """
     for suffix in (
         "-wal",
         "-shm",
@@ -1019,8 +1130,15 @@ def _remove_sqlite_sidecars() -> None:
                 missing_ok=True
             )
 
-        except OSError:
-            pass
+        except OSError as exc:
+            raise BackupError(
+                (
+                    "The current SQLite database could not "
+                    "be prepared safely for restore.\n\n"
+                    f"Could not remove:\n{path}\n\n"
+                    f"{exc}"
+                )
+            ) from exc
 
 
 def _directory_size(

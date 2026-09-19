@@ -452,6 +452,10 @@ def rotate_photo(
     photo_id: int,
     degrees: int,
 ) -> None:
+    """
+    Rotate one managed image while keeping the image file and database
+    rotation metadata consistent if the transaction fails.
+    """
     if degrees not in {
         -90,
         90,
@@ -464,56 +468,128 @@ def rotate_photo(
             )
         )
 
-    with session_scope() as session:
-        photo = session.get(
-            ListingPhoto,
-            photo_id,
-        )
+    source: Path | None = None
+    backup_path: Path | None = None
+    thumbnail: Path | None = None
 
-        if photo is None:
-            raise PhotoNotFoundError(
-                f"Photo #{photo_id} does not exist."
+    try:
+        with session_scope() as session:
+            photo = session.get(
+                ListingPhoto,
+                photo_id,
             )
 
-        source = resolve_photo_path(
-            photo
-        )
+            if photo is None:
+                raise PhotoNotFoundError(
+                    f"Photo #{photo_id} does not exist."
+                )
 
-        if not source.exists():
-            raise PhotoNotFoundError(
-                (
-                    "Stored image file is missing:\n"
-                    f"{source}"
+            source = resolve_photo_path(
+                photo
+            )
+
+            if not source.exists():
+                raise PhotoNotFoundError(
+                    (
+                        "Stored image file is missing:\n"
+                        f"{source}"
+                    )
+                )
+
+            backup_path = (
+                source.parent
+                / (
+                    f".{source.name}"
+                    ".rotate-backup-"
+                    f"{uuid4().hex}"
                 )
             )
 
-        _rotate_image_file(
-            source,
-            degrees,
-        )
-
-        photo.rotation_degrees = (
-            photo.rotation_degrees
-            + degrees
-        ) % 360
-
-        thumbnail = (
-            get_listing_thumbnails_directory(
-                photo.listing_id
+            shutil.copy2(
+                source,
+                backup_path,
             )
-            / f"{source.stem}.jpg"
-        )
 
-        _create_thumbnail(
-            source,
-            thumbnail,
-        )
+            _rotate_image_file(
+                source,
+                degrees,
+            )
+
+            photo.rotation_degrees = (
+                photo.rotation_degrees
+                + degrees
+            ) % 360
+
+            thumbnail = (
+                get_listing_thumbnails_directory(
+                    photo.listing_id
+                )
+                / f"{source.stem}.jpg"
+            )
+
+    except Exception as exc:
+        if (
+            source is not None
+            and backup_path is not None
+            and backup_path.exists()
+        ):
+            try:
+                backup_path.replace(
+                    source
+                )
+
+            except OSError as restore_exc:
+                raise PhotoError(
+                    (
+                        "Photo rotation failed and the original "
+                        "image could not be restored automatically.\n\n"
+                        f"Preserved backup:\n{backup_path}\n\n"
+                        f"{restore_exc}"
+                    )
+                ) from exc
+
+        raise
+
+    if backup_path is not None:
+        try:
+            backup_path.unlink(
+                missing_ok=True
+            )
+
+        except OSError:
+            pass
+
+    # Thumbnail generation happens only after the database commit.
+    # If it fails, remove any stale thumbnail; get_thumbnail_path()
+    # can regenerate it later from the correctly rotated source.
+    if (
+        source is not None
+        and thumbnail is not None
+    ):
+        try:
+            _create_thumbnail(
+                source,
+                thumbnail,
+            )
+
+        except Exception:
+            try:
+                thumbnail.unlink(
+                    missing_ok=True
+                )
+
+            except OSError:
+                pass
 
 
 def replace_photo(
     photo_id: int,
     replacement_path: str | Path,
 ) -> None:
+    """
+    Replace one managed photo without leaving orphaned replacement
+    files if image processing or the database transaction fails.
+    """
     replacement = validate_image_file(
         replacement_path
     )
@@ -521,80 +597,105 @@ def replace_photo(
     old_path: Path | None = None
     old_thumbnail: Path | None = None
 
-    with session_scope() as session:
-        photo = session.get(
-            ListingPhoto,
-            photo_id,
-        )
+    new_path: Path | None = None
+    new_thumbnail: Path | None = None
 
-        if photo is None:
-            raise PhotoNotFoundError(
-                f"Photo #{photo_id} does not exist."
+    try:
+        with session_scope() as session:
+            photo = session.get(
+                ListingPhoto,
+                photo_id,
             )
 
-        old_path = resolve_photo_path(
-            photo
-        )
+            if photo is None:
+                raise PhotoNotFoundError(
+                    f"Photo #{photo_id} does not exist."
+                )
 
-        photos_directory = (
-            get_listing_photos_directory(
-                photo.listing_id
+            old_path = resolve_photo_path(
+                photo
             )
-        )
 
-        photos_directory.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-        suffix = (
-            replacement
-            .suffix
-            .lower()
-        )
-
-        new_path = (
-            photos_directory
-            / f"{uuid4().hex}{suffix}"
-        )
-
-        shutil.copy2(
-            replacement,
-            new_path,
-        )
-
-        old_thumbnail = (
-            get_listing_thumbnails_directory(
-                photo.listing_id
+            photos_directory = (
+                get_listing_photos_directory(
+                    photo.listing_id
+                )
             )
-            / f"{old_path.stem}.jpg"
-        )
 
-        new_thumbnail = (
-            get_listing_thumbnails_directory(
-                photo.listing_id
+            photos_directory.mkdir(
+                parents=True,
+                exist_ok=True,
             )
-            / f"{new_path.stem}.jpg"
-        )
 
-        _create_thumbnail(
+            suffix = (
+                replacement
+                .suffix
+                .lower()
+            )
+
+            new_path = (
+                photos_directory
+                / f"{uuid4().hex}{suffix}"
+            )
+
+            shutil.copy2(
+                replacement,
+                new_path,
+            )
+
+            old_thumbnail = (
+                get_listing_thumbnails_directory(
+                    photo.listing_id
+                )
+                / f"{old_path.stem}.jpg"
+            )
+
+            new_thumbnail = (
+                get_listing_thumbnails_directory(
+                    photo.listing_id
+                )
+                / f"{new_path.stem}.jpg"
+            )
+
+            _create_thumbnail(
+                new_path,
+                new_thumbnail,
+            )
+
+            photo.file_path = (
+                _path_for_database(
+                    new_path
+                )
+            )
+
+            photo.rotation_degrees = 0
+
+    except Exception:
+        for path in (
             new_path,
             new_thumbnail,
-        )
+        ):
+            if path is None:
+                continue
 
-        photo.file_path = (
-            _path_for_database(
-                new_path
-            )
-        )
+            try:
+                path.unlink(
+                    missing_ok=True
+                )
 
-        photo.rotation_degrees = 0
+            except OSError:
+                pass
 
+        raise
+
+    # The database commit succeeded. The old managed files are now
+    # obsolete, so best-effort cleanup cannot cause data loss.
     if old_path is not None:
         try:
             old_path.unlink(
                 missing_ok=True
             )
+
         except OSError:
             pass
 
@@ -603,6 +704,7 @@ def replace_photo(
             old_thumbnail.unlink(
                 missing_ok=True
             )
+
         except OSError:
             pass
 
@@ -783,41 +885,54 @@ def _rotate_image_file(
         )
     )
 
-    with Image.open(
-        path
-    ) as image:
-        image = ImageOps.exif_transpose(
-            image
+    try:
+        with Image.open(
+            path
+        ) as image:
+            image = ImageOps.exif_transpose(
+                image
+            )
+
+            image = image.rotate(
+                -degrees,
+                expand=True,
+            )
+
+            save_kwargs = {}
+
+            if (
+                path.suffix.lower()
+                in {
+                    ".jpg",
+                    ".jpeg",
+                }
+            ):
+                if image.mode != "RGB":
+                    image = image.convert(
+                        "RGB"
+                    )
+
+                save_kwargs = {
+                    "quality": 95,
+                }
+
+            image.save(
+                temporary_path,
+                **save_kwargs,
+            )
+
+        temporary_path.replace(
+            path
         )
 
-        image = image.rotate(
-            -degrees,
-            expand=True,
-        )
+    except Exception:
+        try:
+            temporary_path.unlink(
+                missing_ok=True
+            )
 
-        save_kwargs = {}
+        except OSError:
+            pass
 
-        if (
-            path.suffix.lower()
-            in {
-                ".jpg",
-                ".jpeg",
-            }
-        ):
-            if image.mode != "RGB":
-                image = image.convert(
-                    "RGB"
-                )
+        raise
 
-            save_kwargs = {
-                "quality": 95,
-            }
-
-        image.save(
-            temporary_path,
-            **save_kwargs,
-        )
-
-    temporary_path.replace(
-        path
-    )
