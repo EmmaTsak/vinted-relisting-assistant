@@ -184,13 +184,6 @@ def database_health_check() -> bool:
         return False
 
 
-def create_session() -> Session:
-    """
-    Return a new SQLAlchemy session.
-
-    The caller is responsible for closing it.
-    """
-    return SessionLocal()
 
 
 @contextmanager

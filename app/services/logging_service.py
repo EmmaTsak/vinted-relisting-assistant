@@ -162,8 +162,6 @@ def get_logger(
     )
 
 
-def get_log_file_path() -> Path:
-    return LOG_FILE_PATH
 
 
 def log_exception(

@@ -106,23 +106,8 @@ def get_scaled_pixmap(
     return pixmap
 
 
-def clear_pixmap_cache() -> None:
-    """
-    Remove every cached thumbnail.
-
-    Normally this is not required because file modification
-    timestamps automatically invalidate changed images.
-    """
-    _pixmap_cache.clear()
 
 
-def get_pixmap_cache_size() -> int:
-    """
-    Return the number of currently cached scaled images.
-    """
-    return len(
-        _pixmap_cache
-    )
 
 
 def _trim_cache() -> None:

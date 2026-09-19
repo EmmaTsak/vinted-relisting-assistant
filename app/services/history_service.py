@@ -102,54 +102,6 @@ def get_relist_history() -> list[HistoryRecord]:
         ]
 
 
-def get_listing_relist_history(
-    listing_id: int,
-) -> list[HistoryRecord]:
-    """
-    Return history for one listing, newest first.
-    """
-    with session_scope() as session:
-        rows = session.execute(
-            select(
-                RelistHistory,
-                Listing,
-            )
-            .join(
-                Listing,
-                Listing.id
-                == RelistHistory.listing_id,
-            )
-            .where(
-                RelistHistory.listing_id
-                == listing_id
-            )
-            .order_by(
-                RelistHistory.relisted_date.desc(),
-                RelistHistory.recorded_at.desc(),
-                RelistHistory.id.desc(),
-            )
-        ).all()
-
-        return [
-            HistoryRecord(
-                id=history.id,
-                listing_id=listing.id,
-                title=listing.title,
-                relisted_date=(
-                    history.relisted_date
-                ),
-                previous_relisted_date=(
-                    history.previous_relisted_date
-                ),
-                recorded_at=(
-                    history.recorded_at
-                ),
-                current_relist_count=(
-                    listing.number_of_times_relisted
-                ),
-            )
-            for history, listing in rows
-        ]
 
 
 def get_history_summary() -> HistorySummary:

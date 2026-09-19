@@ -3,6 +3,25 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+
+PROJECT_ROOT = (
+    Path(__file__)
+    .resolve()
+    .parent
+    .parent
+)
+
+project_root_text = str(
+    PROJECT_ROOT
+)
+
+if project_root_text not in sys.path:
+    sys.path.insert(
+        0,
+        project_root_text,
+    )
+
+
 from app.database import (
     database_health_check,
     initialize_database,
@@ -37,7 +56,7 @@ def main() -> int:
 
         print(
             (
-                'python import_vinted_export.py '
+                'python tools\\import_vinted_export.py '
                 '"C:\\path\\to\\listings.zip"'
             )
         )

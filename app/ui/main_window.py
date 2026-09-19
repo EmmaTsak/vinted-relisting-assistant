@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import (
+    QSettings,
     QTimer,
     Qt,
 )
+from PySide6.QtGui import (
+    QCloseEvent,
+)
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -20,10 +27,36 @@ from app import (
     APP_NAME,
     APP_VERSION,
 )
+from app.services.logging_service import (
+    get_logger,
+    initialize_logging,
+    install_exception_hooks,
+)
 from app.services.settings_service import (
     AppSettings,
     default_settings,
     load_settings,
+)
+from app.ui.add_import_hub import (
+    AddImportHub,
+)
+from app.ui.all_listings import (
+    AllListingsPage,
+)
+from app.ui.components.cards.dashboard_moment import (
+    DashboardMoment,
+)
+from app.ui.components.dialogs.about_dialog import (
+    AboutDialog,
+)
+from app.ui.components.dialogs.error_feedback import (
+    show_logged_error,
+)
+from app.ui.components.dialogs.message_dialog import (
+    BrandedMessageDialog,
+)
+from app.ui.components.dialogs.welcome_dialog import (
+    WelcomeDialog,
 )
 from app.ui.daily_queue import (
     DailyQueuePage,
@@ -40,6 +73,9 @@ from app.ui.import_dialog import (
 from app.ui.lifecycle_dialog import (
     ListingLifecycleDialog,
 )
+from app.ui.listing_dialog import (
+    ListingDialog,
+)
 from app.ui.relisting_preparation import (
     RelistingPreparationDialog,
 )
@@ -50,77 +86,15 @@ from app.ui.status_listings import (
     ArchivedListingsPage,
     SoldListingsPage,
 )
-
-from pathlib import Path
-
-from PySide6.QtCore import (
-    QSettings,
-    QTimer,
-    Qt,
-)
-from PySide6.QtGui import (
-    QCloseEvent,
-)
-from PySide6.QtWidgets import (
-    QApplication,
-    QDialog,
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QSizePolicy,
-    QStackedWidget,
-    QVBoxLayout,
-    QWidget,
-)
-
-from app import (
-    APP_VERSION,
-)
-from app.services.logging_service import (
-    get_logger,
-    initialize_logging,
-    install_exception_hooks,
-)
-from app.ui.add_import_hub import (
-    AddImportHub,
-)
-from app.ui.relisting_preparation import (
-    RelistingPreparationDialog,
-)
-from app.ui.components.cards.dashboard_moment import (
-    DashboardMoment,
-)
-from app.ui.components.dialogs.about_dialog import (
-    AboutDialog,
-)
-from app.ui.components.dialogs.welcome_dialog import (
-    WelcomeDialog,
-)
-WELCOME_COMPLETE_KEY = (
-    "onboarding/welcome_complete"
-)
-
-
 from app.ui.vinted_export_import_dialog import (
     VintedExportImportDialog,
 )
 
-from app.ui.components.dialogs.error_feedback import (
-    show_logged_error,
+
+WELCOME_COMPLETE_KEY = (
+    "onboarding/welcome_complete"
 )
 
-from app.ui.components.dialogs.message_dialog import (
-    BrandedMessageDialog,
-)
-
-from app.ui.all_listings import (
-    AllListingsPage,
-)
-
-from app.ui.listing_dialog import (
-    ListingDialog,
-)
 
 class MainWindow(QMainWindow):
     """
