@@ -1851,7 +1851,7 @@ class MainWindow(QMainWindow):
         )
 
         workflow_label = QLabel(
-            "LOCAL â€¢ MANUAL WORKFLOW"
+            "LOCAL / MANUAL WORKFLOW"
         )
 
         workflow_label.setObjectName(

@@ -4,11 +4,13 @@ import math
 from decimal import Decimal
 
 from PySide6.QtCore import (
+    QEvent,
     QTimer,
     Qt,
     Signal,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QStackedWidget,
     QComboBox,
     QDoubleSpinBox,
@@ -16,6 +18,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QPushButton,
     QScrollArea,
@@ -112,6 +115,7 @@ class AllListingsPage(QWidget):
         self._add_category_toolbar()
         self._polish_existing_controls()
         self._install_shortcuts()
+        self._install_filter_dismissal()
 
     def _build_ui(
         self,
@@ -228,7 +232,7 @@ class AllListingsPage(QWidget):
 
         self.container.setSizePolicy(
             QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Minimum,
         )
 
         self.cards_layout = (
@@ -246,6 +250,10 @@ class AllListingsPage(QWidget):
 
         self.cards_layout.setSpacing(
             12
+        )
+
+        self.cards_layout.setSizeConstraint(
+            QLayout.SizeConstraint.SetMinimumSize
         )
 
         self.cards_layout.addStretch()
@@ -687,10 +695,6 @@ class AllListingsPage(QWidget):
             "€ "
         )
 
-        self.minimum_price_filter.setSpecialValueText(
-            "Any"
-        )
-
         self.minimum_price_filter.valueChanged.connect(
             self._price_filter_changed
         )
@@ -710,10 +714,6 @@ class AllListingsPage(QWidget):
 
         self.maximum_price_filter.setPrefix(
             "€ "
-        )
-
-        self.maximum_price_filter.setSpecialValueText(
-            "Any"
         )
 
         self.maximum_price_filter.valueChanged.connect(
@@ -979,6 +979,155 @@ class AllListingsPage(QWidget):
 
         self._update_filter_button_text()
 
+    def _install_filter_dismissal(
+        self,
+    ) -> None:
+        application = (
+            QApplication.instance()
+        )
+
+        if application is None:
+            return
+
+        application.installEventFilter(
+            self
+        )
+
+    @staticmethod
+    def _is_widget_within(
+        widget: QWidget,
+        ancestor: QWidget,
+    ) -> bool:
+        current: QWidget | None = widget
+
+        while current is not None:
+            if current is ancestor:
+                return True
+
+            current = (
+                current.parentWidget()
+            )
+
+        return False
+
+    def _filter_combo_boxes(
+        self,
+    ) -> tuple[QComboBox, ...]:
+        return (
+            self.status_filter,
+            self.age_filter,
+            self.priority_filter,
+            self.sort_filter,
+            self.category_filter,
+            self.subcategory_filter,
+            self.brand_filter,
+            self.condition_filter,
+            self.size_filter,
+            self.colour_filter,
+        )
+
+    def _is_filter_interaction_widget(
+        self,
+        widget: QWidget,
+    ) -> bool:
+        if self._is_widget_within(
+            widget,
+            self.filter_panel,
+        ):
+            return True
+
+        if self._is_widget_within(
+            widget,
+            self.filter_toggle_button,
+        ):
+            return True
+
+        # QComboBox popup views live in their own popup window
+        # instead of beneath filter_panel in the normal widget
+        # hierarchy. Explicitly treat those popup windows as
+        # part of the filter interaction.
+        for combo in (
+            self._filter_combo_boxes()
+        ):
+            view = combo.view()
+
+            if self._is_widget_within(
+                widget,
+                view,
+            ):
+                return True
+
+            if (
+                widget.window()
+                is view.window()
+            ):
+                return True
+
+        return False
+
+    def eventFilter(
+        self,
+        watched,
+        event,
+    ) -> bool:
+        # -------------------------------------------------
+        # Price filters
+        # -------------------------------------------------
+        #
+        # When a price filter is still at 0.00, select the
+        # whole numeric value on entry so typing immediately
+        # replaces the zero value.
+        if (
+            event.type()
+            in (
+                QEvent.Type.FocusIn,
+                QEvent.Type.MouseButtonPress,
+            )
+        ):
+            for price_filter in (
+                self.minimum_price_filter,
+                self.maximum_price_filter,
+            ):
+                editor = (
+                    price_filter.lineEdit()
+                )
+
+                if (
+                    watched is editor
+                    and price_filter.value()
+                    == price_filter.minimum()
+                ):
+                    QTimer.singleShot(
+                        0,
+                        editor.selectAll,
+                    )
+
+                    break
+
+        # -------------------------------------------------
+        # Filters panel outside-click dismissal
+        # -------------------------------------------------
+        if (
+            event.type()
+            == QEvent.Type.MouseButtonPress
+            and self.filter_panel.isVisible()
+            and self.filter_toggle_button.isChecked()
+            and isinstance(
+                watched,
+                QWidget,
+            )
+            and not self._is_filter_interaction_widget(
+                watched
+            )
+        ):
+            self.filter_toggle_button.setChecked(
+                False
+            )
+
+        return super().eventFilter(
+            watched,
+            event,
+        )
 
 
     def _update_filter_button_text(

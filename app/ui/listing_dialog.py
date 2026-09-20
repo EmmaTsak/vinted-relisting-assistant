@@ -286,12 +286,12 @@ class ListingDialog(QDialog):
 
         self.resize(
             850,
-            900,
+            650,
         )
 
         self.setMinimumSize(
-            700,
-            700,
+            660,
+            500,
         )
 
         if self.listing_id is None:
@@ -315,12 +315,12 @@ class ListingDialog(QDialog):
 
         fit_dialog_to_screen(
             self,
-            preferred_width=1000,
-            preferred_height=720,
-            minimum_width=680,
+            preferred_width=850,
+            preferred_height=650,
+            minimum_width=660,
             minimum_height=500,
-            width_ratio=0.90,
-            height_ratio=0.84,
+            width_ratio=0.82,
+            height_ratio=0.78,
         )
 
     def _listing_base_build_ui(

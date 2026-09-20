@@ -633,8 +633,8 @@ class HistoryPage(QWidget):
         self,
     ) -> None:
         """
-        Show a lightweight loading state before rebuilding
-        relisting history.
+        Refresh relisting history while keeping the current content
+        visible until the new history data is ready.
         """
         if getattr(
             self,
@@ -644,8 +644,6 @@ class HistoryPage(QWidget):
             return
 
         self._refresh_pending = True
-
-        self._show_loading_state()
 
         QTimer.singleShot(
             0,
@@ -662,8 +660,6 @@ class HistoryPage(QWidget):
     def _perform_refresh(
         self,
     ) -> None:
-        self._clear_groups()
-
         try:
             records = (
                 get_relist_history()
@@ -686,6 +682,11 @@ class HistoryPage(QWidget):
                 ""
             )
 
+            # Loading has failed. Replace any previously rendered
+            # history with the error state rather than stacking the
+            # error above stale history.
+            self._clear_groups()
+
             error = QLabel(
                 (
                     "Unable to load relisting history.\n\n"
@@ -707,6 +708,10 @@ class HistoryPage(QWidget):
             )
 
             return
+
+        # Data is ready. Replace the old rendered groups now,
+        # rather than blanking the page during the database query.
+        self._clear_groups()
 
         self.total_label.setText(
             (

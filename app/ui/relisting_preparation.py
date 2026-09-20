@@ -7,6 +7,7 @@ from PySide6.QtCore import (
     Qt,
     QUrl,
     Signal,
+    QEvent,
 )
 from PySide6.QtGui import (
     QDesktopServices,
@@ -46,14 +47,10 @@ from app.services.queue_service import (
     mark_as_relisted,
 )
 from app.ui.components.dialogs.error_feedback import (
-    log_background_error,
     show_logged_error,
 )
 from app.ui.components.dialogs.message_dialog import (
     BrandedMessageDialog,
-)
-from app.ui.components.dialogs.success_dialog import (
-    BrandedSuccessDialog,
 )
 from app.ui.components.states.photo_fallback import (
     show_photo_fallback,
@@ -72,6 +69,71 @@ DEFAULT_VINTED_URL = "https://www.vinted.gr/"
 from app.ui.dialog_geometry import (
     fit_dialog_to_screen,
 )
+
+class PreparedPriceSpinBox(QDoubleSpinBox):
+    """
+    Relisting price editor with normal text-field behaviour.
+
+    When the field receives focus, its current numeric value is
+    selected so the next typed number replaces it immediately.
+
+    Once the field already has focus, mouse clicks behave normally
+    and can position the text cursor.
+    """
+
+    def __init__(
+        self,
+        *args,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            *args,
+            **kwargs,
+        )
+
+        editor = self.lineEdit()
+
+        if editor is not None:
+            editor.installEventFilter(
+                self
+            )
+
+    def eventFilter(
+        self,
+        watched,
+        event,
+    ) -> bool:
+        editor = self.lineEdit()
+
+        if watched is editor:
+            if (
+                event.type()
+                == QEvent.Type.FocusIn
+            ):
+                editor.selectAll()
+
+            elif (
+                event.type()
+                == QEvent.Type.MouseButtonPress
+                and not editor.hasFocus()
+            ):
+                editor.setFocus(
+                    Qt.FocusReason.MouseFocusReason
+                )
+
+                editor.selectAll()
+
+                # Consume only the first click that gave the
+                # editor focus. Further clicks behave normally.
+                return True
+
+        return super().eventFilter(
+            watched,
+            event,
+        )
+
+
+
 
 class RelistingPreparationDialog(QDialog):
     """
@@ -122,13 +184,13 @@ class RelistingPreparationDialog(QDialog):
         )
 
         self.resize(
-            1180,
-            820,
+            900,
+            700,
         )
 
         self.setMinimumSize(
-            950,
-            650,
+            720,
+            560,
         )
 
         try:
@@ -180,12 +242,12 @@ class RelistingPreparationDialog(QDialog):
 
         fit_dialog_to_screen(
             self,
-            preferred_width=1100,
-            preferred_height=720,
-            minimum_width=760,
-            minimum_height=500,
-            width_ratio=0.92,
-            height_ratio=0.84,
+            preferred_width=900,
+            preferred_height=700,
+            minimum_width=720,
+            minimum_height=560,
+            width_ratio=0.84,
+            height_ratio=0.80,
         )
 
     # =====================================================
@@ -490,7 +552,7 @@ class RelistingPreparationDialog(QDialog):
         )
 
         panel.setFixedWidth(
-            350
+            300
         )
 
         layout = QVBoxLayout(
@@ -554,7 +616,7 @@ class RelistingPreparationDialog(QDialog):
         )
 
         self.large_preview.setFixedHeight(
-            340
+            220
         )
 
         self.large_preview.setObjectName(
@@ -590,8 +652,12 @@ class RelistingPreparationDialog(QDialog):
             6
         )
 
+        self.photo_list.setVisible(
+            False
+        )
+
         self.photo_list.setFixedHeight(
-            120
+            0
         )
 
         self.photo_list.currentItemChanged.connect(
@@ -602,25 +668,6 @@ class RelistingPreparationDialog(QDialog):
             self.photo_list
         )
 
-        help_text = QLabel(
-            (
-                "Select a thumbnail to preview it. "
-                "Use the folder button when you need the "
-                "original files for manual upload."
-            )
-        )
-
-        help_text.setObjectName(
-            "informationText"
-        )
-
-        help_text.setWordWrap(
-            True
-        )
-
-        layout.addWidget(
-            help_text
-        )
 
         folder_button = QPushButton(
             "OPEN PHOTO FOLDER"
@@ -1405,8 +1452,8 @@ class RelistingPreparationDialog(QDialog):
 
         self.large_preview.setPixmap(
             pixmap.scaled(
-                320,
-                320,
+                250,
+                210,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
@@ -1488,7 +1535,7 @@ class RelistingPreparationDialog(QDialog):
         self.setWindowTitle(
             (
                 "Prepare Listing for "
-                "Relisting â€” Copied"
+                "Relisting - Copied"
             )
         )
 
@@ -1604,22 +1651,13 @@ class RelistingPreparationDialog(QDialog):
     def _mark_as_relisted(
         self,
     ) -> None:
-        confirmed = (
-            BrandedMessageDialog.ask(
-                self,
-                title="Mark as Relisted?",
-                message=(
-                    "Only confirm after you've published "
-                    "this listing on Vinted."
-                ),
-                confirm_text="YES, RELISTED",
-                cancel_text="NOT YET",
-            )
-        )
+        """
+        Record a relist after the user has manually published it.
 
-        if not confirmed:
-            return
-
+        MARK AS RELISTED is itself the confirmation. On success the
+        preparation window closes immediately without another routine
+        confirmation or success modal.
+        """
         if not self._save_prepared_price(
             show_feedback=False,
         ):
@@ -1676,79 +1714,6 @@ class RelistingPreparationDialog(QDialog):
             )
 
             return
-
-        # -------------------------------------------------
-        # Build success feedback
-        # -------------------------------------------------
-
-        success_title = (
-            "Relisting recorded"
-        )
-
-        success_message = (
-            "Nice â€” this listing is now recorded as relisted."
-        )
-
-        success_detail = (
-            "Your daily progress has been updated."
-        )
-
-        try:
-            snapshot = get_today_queue(
-                configured_limit=(
-                    self.configured_limit
-                ),
-                minimum_age_days=(
-                    self.minimum_age_days
-                ),
-            )
-
-            if snapshot.is_complete:
-                success_title = (
-                    "Today's target is complete"
-                )
-
-                success_message = (
-                    "You've reached today's relisting target."
-                )
-
-                success_detail = (
-                    "Your queue is finished for today."
-                )
-
-            else:
-                remaining = (
-                    snapshot.remaining_completions
-                )
-
-                if remaining == 1:
-                    success_detail = (
-                        "1 relist left today."
-                    )
-
-                else:
-                    success_detail = (
-                        f"{remaining} relists left today."
-                    )
-
-        except Exception as exc:
-            log_background_error(
-                context=(
-                    "Unable to calculate queue progress after "
-                    "Relisting Preparation successfully recorded "
-                    f"listing #{self.listing_id}"
-                ),
-                exception=exc,
-            )
-
-        dialog = BrandedSuccessDialog(
-            title=success_title,
-            message=success_message,
-            detail=success_detail,
-            parent=self,
-        )
-
-        dialog.exec()
 
         self.relisted.emit(
             self.listing_id
@@ -1813,7 +1778,7 @@ class RelistingPreparationDialog(QDialog):
         )
 
         self.prepared_price_input = (
-            QDoubleSpinBox()
+            PreparedPriceSpinBox()
         )
 
         self.prepared_price_input.setDecimals(

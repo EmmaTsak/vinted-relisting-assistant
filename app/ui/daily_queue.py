@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QVBoxLayout,
     QWidget,
+    QLayout,
+    QSizePolicy,
 )
 
 from app.models import (
@@ -89,6 +91,11 @@ class QueueCard(QFrame):
 
         self.setObjectName(
             "queueCard"
+        )
+
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
         )
 
         self.setMinimumHeight(
@@ -689,6 +696,11 @@ class DailyQueuePage(QWidget):
 
         self.container = QWidget()
 
+        self.container.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Minimum,
+        )
+
         self.cards_layout = QVBoxLayout(
             self.container
         )
@@ -702,6 +714,10 @@ class DailyQueuePage(QWidget):
 
         self.cards_layout.setSpacing(
             10
+        )
+
+        self.cards_layout.setSizeConstraint(
+            QLayout.SizeConstraint.SetMinimumSize
         )
 
         self.cards_layout.addStretch()
@@ -851,7 +867,8 @@ class DailyQueuePage(QWidget):
         self,
     ) -> None:
         """
-        Show the loading state before rebuilding today's queue.
+        Refresh today's queue without replacing the current content
+        with a temporary loading screen.
         """
         if getattr(
             self,
@@ -861,8 +878,6 @@ class DailyQueuePage(QWidget):
             return
 
         self._refresh_pending = True
-
-        self._show_loading_state()
 
         QTimer.singleShot(
             0,
@@ -1085,6 +1100,14 @@ class DailyQueuePage(QWidget):
             )
         )
 
+        self.scroll_area.setUpdatesEnabled(
+            False
+        )
+
+        self.scroll_area.viewport().setUpdatesEnabled(
+            False
+        )
+
         self.container.setUpdatesEnabled(
             False
         )
@@ -1140,7 +1163,17 @@ class DailyQueuePage(QWidget):
                 True
             )
 
+            self.scroll_area.viewport().setUpdatesEnabled(
+                True
+            )
+
+            self.scroll_area.setUpdatesEnabled(
+                True
+            )
+
             self.container.update()
+            self.scroll_area.viewport().update()
+            self.scroll_area.update()
 
     # =====================================================
     # Queue actions
@@ -1535,5 +1568,14 @@ class DailyQueuePage(QWidget):
             widget = item.widget()
 
             if widget is not None:
+                widget.hide()
+
+                widget.setParent(
+                    None
+                )
+
                 widget.deleteLater()
+
+        self.cards_layout.invalidate()
+        self.container.updateGeometry()
 

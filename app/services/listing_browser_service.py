@@ -591,23 +591,23 @@ def _sort_listings(
 
 def _last_relisted_sort_key(
     listing: Listing,
-) -> tuple:
+) -> tuple[int, int, int]:
     """
-    Never-relisted items first, followed by the oldest
-    relisted items.
+    Most recently relisted items first, then older relists,
+    with listings that have never been relisted last.
     """
     if (
         listing.last_relisted_date
         is None
     ):
         return (
+            1,
             0,
-            listing.original_created_date,
             listing.id,
         )
 
     return (
-        1,
-        listing.last_relisted_date,
-        listing.id,
+        0,
+        -listing.last_relisted_date.toordinal(),
+        -listing.id,
     )
