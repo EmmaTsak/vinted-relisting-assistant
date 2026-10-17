@@ -80,6 +80,7 @@ class AllListingsPage(QWidget):
     manage_requested = Signal(int)
 
     FILTER_DELAY_MS = 250
+    CARD_RENDER_BATCH_SIZE = 25
 
     def __init__(
         self,
@@ -91,6 +92,11 @@ class AllListingsPage(QWidget):
 
         self._updating_filter_options = False
         self._refresh_pending = False
+
+        # Identifies the currently active card-render operation.
+        # Deferred batches from an older page/filter refresh stop
+        # as soon as a newer generation begins.
+        self._render_generation = 0
 
         self.current_page = 1
 
@@ -1328,6 +1334,14 @@ class AllListingsPage(QWidget):
         """
 
         self._refresh_pending = False
+
+        # Cancel any card batches still queued from an earlier
+        # page, filter or sort result.
+        self._render_generation += 1
+        render_generation = (
+            self._render_generation
+        )
+
         if self._updating_filter_options:
             return
 
@@ -1520,34 +1534,12 @@ class AllListingsPage(QWidget):
                 )
             )
 
-            for (
-                index,
-                listing,
-            ) in enumerate(
-                visible_listings
-            ):
-                card = ListingCard(
-                    listing=listing,
-                    photos=(
-                        photos_by_listing.get(
-                            listing.id,
-                            [],
-                        )
-                    ),
-                )
-
-                card.edit_requested.connect(
-                    self.edit_requested.emit
-                )
-
-                card.manage_requested.connect(
-                    self.manage_requested.emit
-                )
-
-                self.cards_layout.insertWidget(
-                    index,
-                    card,
-                )
+            self._render_listing_batch(
+                generation=render_generation,
+                listings=visible_listings,
+                photos_by_listing=photos_by_listing,
+                start_index=0,
+            )
 
         finally:
             self.container.setUpdatesEnabled(
@@ -1569,6 +1561,94 @@ class AllListingsPage(QWidget):
             self.container.update()
 
             # Cards are now fully rebuilt. Reveal them only now.
+
+    def _render_listing_batch(
+        self,
+        *,
+        generation: int,
+        listings: list,
+        photos_by_listing: dict[int, list],
+        start_index: int,
+    ) -> None:
+        """
+        Build visible listing cards in bounded UI-thread batches.
+
+        A normal 25-item page is still rendered in one pass.
+        Larger 50/100-item pages yield back to Qt between batches
+        so the window remains responsive while the page fills in.
+
+        generation prevents a delayed batch from an older filter,
+        sort or page request from rendering stale cards.
+        """
+        if (
+            generation
+            != self._render_generation
+        ):
+            return
+
+        end_index = min(
+            start_index
+            + self.CARD_RENDER_BATCH_SIZE,
+            len(listings),
+        )
+
+        for index in range(
+            start_index,
+            end_index,
+        ):
+            if (
+                generation
+                != self._render_generation
+            ):
+                return
+
+            listing = listings[
+                index
+            ]
+
+            card = ListingCard(
+                listing=listing,
+                photos=(
+                    photos_by_listing.get(
+                        listing.id,
+                        [],
+                    )
+                ),
+            )
+
+            card.edit_requested.connect(
+                self.edit_requested.emit
+            )
+
+            card.manage_requested.connect(
+                self.manage_requested.emit
+            )
+
+            self.cards_layout.insertWidget(
+                index,
+                card,
+            )
+
+        if (
+            end_index
+            >= len(listings)
+            or generation
+            != self._render_generation
+        ):
+            return
+
+        # Give Qt an event-loop turn before constructing the next
+        # group. This is particularly noticeable with 100/page.
+        QTimer.singleShot(
+            0,
+            lambda: self._render_listing_batch(
+                generation=generation,
+                listings=listings,
+                photos_by_listing=photos_by_listing,
+                start_index=end_index,
+            ),
+        )
+
 
     def _build_filters(
         self,
