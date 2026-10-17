@@ -3,17 +3,23 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import (
+    QObject,
+    QThread,
+    QTimer,
     Qt,
     QUrl,
     Signal,
+    Slot,
 )
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QProgressBar,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -36,6 +42,33 @@ from app.ui.components.dialogs.error_feedback import (
 from app.ui.components.dialogs.message_dialog import (
     BrandedMessageDialog,
 )
+
+
+class _BackupWorker(QObject):
+    """
+    Run the filesystem-heavy backup outside the GUI thread.
+    """
+
+    completed = Signal(object)
+    failed = Signal(object)
+
+    @Slot()
+    def run(
+        self,
+    ) -> None:
+        try:
+            backup = create_backup()
+
+        except Exception as exc:
+            self.failed.emit(
+                exc
+            )
+
+            return
+
+        self.completed.emit(
+            backup
+        )
 
 
 class BackupRestoreDialog(QDialog):
@@ -70,6 +103,22 @@ class BackupRestoreDialog(QDialog):
         self.backups: list[
             BackupInfo
         ] = []
+
+        self._backup_thread: (
+            QThread | None
+        ) = None
+
+        self._backup_worker: (
+            _BackupWorker | None
+        ) = None
+
+        self._backup_result: (
+            BackupInfo | None
+        ) = None
+
+        self._backup_error: (
+            Exception | None
+        ) = None
 
         self._build_ui()
         self._apply_styles()
@@ -127,42 +176,88 @@ class BackupRestoreDialog(QDialog):
 
         top_buttons = QHBoxLayout()
 
-        create_button = QPushButton(
+        self.create_button = QPushButton(
             "CREATE BACKUP"
         )
 
-        create_button.setObjectName(
+        self.create_button.setObjectName(
             "primaryButton"
         )
 
-        create_button.clicked.connect(
+        self.create_button.clicked.connect(
             self._create_backup
         )
 
-        refresh_button = QPushButton(
+        self.refresh_button = QPushButton(
             "REFRESH"
         )
 
-        refresh_button.setObjectName(
+        self.refresh_button.setObjectName(
             "secondaryButton"
         )
 
-        refresh_button.clicked.connect(
+        self.refresh_button.clicked.connect(
             self.refresh
         )
 
         top_buttons.addWidget(
-            create_button
+            self.create_button
         )
 
         top_buttons.addWidget(
-            refresh_button
+            self.refresh_button
         )
 
         top_buttons.addStretch()
 
         layout.addLayout(
             top_buttons
+        )
+
+        self.backup_status_label = QLabel(
+            ""
+        )
+
+        self.backup_status_label.setObjectName(
+            "backupStatus"
+        )
+
+        self.backup_status_label.setWordWrap(
+            True
+        )
+
+        self.backup_status_label.setVisible(
+            False
+        )
+
+        layout.addWidget(
+            self.backup_status_label
+        )
+
+        self.backup_progress = (
+            QProgressBar()
+        )
+
+        # 0, 0 gives Qt's indeterminate/busy animation.
+        self.backup_progress.setRange(
+            0,
+            0,
+        )
+
+        self.backup_progress.setTextVisible(
+            False
+        )
+
+        self.backup_progress.setMaximumHeight(
+            8
+        )
+
+        self.backup_progress.setVisible(
+            False
+        )
+
+        layout.addWidget(
+            self.backup_progress
         )
 
         self.backup_list = QListWidget()
@@ -256,15 +351,15 @@ class BackupRestoreDialog(QDialog):
             self._delete_selected
         )
 
-        close_button = QPushButton(
+        self.close_button = QPushButton(
             "CLOSE"
         )
 
-        close_button.setObjectName(
+        self.close_button.setObjectName(
             "secondaryButton"
         )
 
-        close_button.clicked.connect(
+        self.close_button.clicked.connect(
             self.reject
         )
 
@@ -279,7 +374,7 @@ class BackupRestoreDialog(QDialog):
         bottom_buttons.addStretch()
 
         bottom_buttons.addWidget(
-            close_button
+            self.close_button
         )
 
         bottom_buttons.addWidget(
@@ -296,6 +391,14 @@ class BackupRestoreDialog(QDialog):
 
     def refresh(self) -> None:
         self.backup_list.clear()
+
+        if (
+            self._backup_thread
+            is None
+        ):
+            self.backup_progress.setVisible(
+                False
+            )
 
         self.backup_list.setVisible(
             True
@@ -472,11 +575,219 @@ class BackupRestoreDialog(QDialog):
             enabled
         )
 
-    def _create_backup(self) -> None:
-        try:
-            backup = create_backup()
+    def _create_backup(
+        self,
+    ) -> None:
+        if (
+            self._backup_thread
+            is not None
+        ):
+            return
 
-        except Exception as exc:
+        self._backup_result = None
+        self._backup_error = None
+
+        # FIRST: change the visible UI.
+        self._set_backup_busy(
+            True
+        )
+
+        # Force the busy state onto the screen before any
+        # filesystem work has a chance to begin.
+        self.create_button.repaint()
+        self.backup_status_label.repaint()
+        self.backup_progress.repaint()
+        self.repaint()
+
+        QApplication.processEvents()
+
+        # Give Qt a complete event-loop turn. The backup worker
+        # starts only after the user can already see the feedback.
+        QTimer.singleShot(
+            100,
+            self._start_backup_worker,
+        )
+
+    def _start_backup_worker(
+        self,
+    ) -> None:
+        # The dialog may have been destroyed unexpectedly before
+        # the deferred start. Never launch twice.
+        if (
+            self._backup_thread
+            is not None
+        ):
+            return
+
+        thread = QThread(
+            self
+        )
+
+        worker = _BackupWorker()
+
+        worker.moveToThread(
+            thread
+        )
+
+        thread.started.connect(
+            worker.run
+        )
+
+        worker.completed.connect(
+            self._backup_completed
+        )
+
+        worker.failed.connect(
+            self._backup_failed
+        )
+
+        worker.completed.connect(
+            thread.quit
+        )
+
+        worker.failed.connect(
+            thread.quit
+        )
+
+        worker.completed.connect(
+            worker.deleteLater
+        )
+
+        worker.failed.connect(
+            worker.deleteLater
+        )
+
+        thread.finished.connect(
+            self._backup_thread_finished
+        )
+
+        thread.finished.connect(
+            thread.deleteLater
+        )
+
+        self._backup_thread = (
+            thread
+        )
+
+        self._backup_worker = (
+            worker
+        )
+
+        thread.start()
+
+
+    def _set_backup_busy(
+        self,
+        busy: bool,
+    ) -> None:
+        self.create_button.setEnabled(
+            not busy
+        )
+
+        self.refresh_button.setEnabled(
+            not busy
+        )
+
+        self.close_button.setEnabled(
+            not busy
+        )
+
+        if busy:
+            self.open_button.setEnabled(
+                False
+            )
+
+            self.restore_button.setEnabled(
+                False
+            )
+
+            self.delete_button.setEnabled(
+                False
+            )
+
+            self.create_button.setText(
+                "CREATING BACKUP..."
+            )
+
+            self.backup_status_label.setText(
+                (
+                    "Creating backup..."
+                    "\n"
+                    "Copying your database, settings "
+                    "and managed listing photos."
+                )
+            )
+
+            self.backup_status_label.setVisible(
+                True
+            )
+
+            self.backup_progress.setVisible(
+                True
+            )
+
+        else:
+            self.create_button.setText(
+                "CREATE BACKUP"
+            )
+
+            self.backup_progress.setVisible(
+                False
+            )
+
+            selected = (
+                self._selected_backup()
+                is not None
+            )
+
+            self._set_selection_buttons(
+                selected
+            )
+
+    @Slot(object)
+    def _backup_completed(
+        self,
+        backup: BackupInfo,
+    ) -> None:
+        self._backup_result = (
+            backup
+        )
+
+        self.backup_status_label.setText(
+            "Backup created. Finishing up..."
+        )
+
+    @Slot(object)
+    def _backup_failed(
+        self,
+        exc: Exception,
+    ) -> None:
+        self._backup_error = exc
+
+        self.backup_status_label.setText(
+            "Backup could not be completed."
+        )
+
+    @Slot()
+    def _backup_thread_finished(
+        self,
+    ) -> None:
+        backup = (
+            self._backup_result
+        )
+
+        error = (
+            self._backup_error
+        )
+
+        self._backup_thread = None
+        self._backup_worker = None
+
+        self._set_backup_busy(
+            False
+        )
+
+        if error is not None:
             show_logged_error(
                 self,
                 title="Backup Failed",
@@ -486,10 +797,30 @@ class BackupRestoreDialog(QDialog):
                 context=(
                     "Unable to create backup"
                 ),
-                exception=exc,
+                exception=error,
+            )
+
+            self.backup_status_label.setText(
+                "Backup failed."
             )
 
             return
+
+        if backup is None:
+            self.backup_status_label.setText(
+                "Backup did not complete."
+            )
+
+            return
+
+        self.backup_status_label.setText(
+            (
+                "Backup created successfully. "
+                f"{backup.photo_count} photo(s) copied."
+            )
+        )
+
+        self.refresh()
 
         message = (
             "Backup created successfully.\n\n"
@@ -511,7 +842,6 @@ class BackupRestoreDialog(QDialog):
             button_text="OK",
         )
 
-        self.refresh()
 
     def _restore_selected(self) -> None:
         backup = (
@@ -670,6 +1000,11 @@ class BackupRestoreDialog(QDialog):
 
             #backupDescription {
                 color: #6b7280;
+            }
+
+            #backupStatus {
+                font-weight: 600;
+                padding: 4px 2px;
             }
 
             #backupList {

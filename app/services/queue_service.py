@@ -8,10 +8,12 @@ from sqlalchemy import func, select
 from app.database import session_scope
 from app.models import (
     DailyQueueEntry,
+    DailyQueuePreference,
     Listing,
     ListingPriority,
     ListingStatus,
     QueueEntryStatus,
+    QueueMode,
     RelistHistory,
 )
 
@@ -52,6 +54,7 @@ class QueueSnapshot:
     configured_limit: int
     completed_count: int
     queued_items: list[QueueItem]
+    mode: QueueMode = QueueMode.SMART
 
     @property
     def remaining_completions(
@@ -74,6 +77,22 @@ class QueueSnapshot:
             >= self.configured_limit
         )
 
+@dataclass(slots=True)
+class ManualQueueAddResult:
+    """
+    Summary of adding selected listings to today's manual queue.
+    """
+
+    added: int = 0
+    skipped_existing: int = 0
+    skipped_ineligible: int = 0
+    skipped_limit: int = 0
+    missing: int = 0
+
+
+
+
+
 
 def normalize_daily_limit(
     configured_limit: int,
@@ -88,6 +107,151 @@ def normalize_daily_limit(
         configured_limit,
         DAILY_RELIST_LIMIT,
     )
+
+
+def _get_queue_mode_in_session(
+    session,
+    target_date: date,
+) -> QueueMode:
+    preference = session.scalar(
+        select(
+            DailyQueuePreference
+        )
+        .where(
+            DailyQueuePreference.queue_date
+            == target_date
+        )
+    )
+
+    if preference is None:
+        return QueueMode.SMART
+
+    return preference.mode
+
+
+def _set_queue_mode_in_session(
+    session,
+    *,
+    target_date: date,
+    mode: QueueMode,
+) -> None:
+    """
+    Store today's mode.
+
+    Switching from Smart to Manual removes only entries that
+    are still waiting in today's queue.
+
+    Completed and skipped entries are preserved.
+    """
+    preference = session.scalar(
+        select(
+            DailyQueuePreference
+        )
+        .where(
+            DailyQueuePreference.queue_date
+            == target_date
+        )
+    )
+
+    previous_mode = (
+        preference.mode
+        if preference is not None
+        else QueueMode.SMART
+    )
+
+    if preference is None:
+        preference = (
+            DailyQueuePreference(
+                queue_date=target_date,
+                mode=mode,
+            )
+        )
+
+        session.add(
+            preference
+        )
+
+    else:
+        preference.mode = mode
+
+    if (
+        previous_mode
+        != QueueMode.MANUAL
+        and mode
+        == QueueMode.MANUAL
+    ):
+        queued_entries = list(
+            session.scalars(
+                select(
+                    DailyQueueEntry
+                )
+                .where(
+                    (
+                        DailyQueueEntry.queue_date
+                        == target_date
+                    ),
+                    (
+                        DailyQueueEntry.status
+                        == QueueEntryStatus.QUEUED
+                    ),
+                )
+            ).all()
+        )
+
+        for entry in queued_entries:
+            session.delete(
+                entry
+            )
+
+        session.flush()
+
+
+def get_queue_mode(
+    today: date | None = None,
+) -> QueueMode:
+    target_date = (
+        today
+        or date.today()
+    )
+
+    with session_scope() as session:
+        return _get_queue_mode_in_session(
+            session,
+            target_date,
+        )
+
+
+def set_queue_mode(
+    mode: QueueMode | str,
+    today: date | None = None,
+) -> QueueMode:
+    """
+    Change today's queue population mode.
+    """
+    target_date = (
+        today
+        or date.today()
+    )
+
+    normalized_mode = (
+        mode
+        if isinstance(
+            mode,
+            QueueMode,
+        )
+        else QueueMode(
+            mode
+        )
+    )
+
+    with session_scope() as session:
+        _set_queue_mode_in_session(
+            session,
+            target_date=target_date,
+            mode=normalized_mode,
+        )
+
+    return normalized_mode
 
 
 def get_today_queue(
@@ -129,6 +293,13 @@ def get_today_queue(
             target_date,
         )
 
+        queue_mode = (
+            _get_queue_mode_in_session(
+                session,
+                target_date,
+            )
+        )
+
         completed_count = (
             _completed_count(
                 session,
@@ -142,6 +313,7 @@ def get_today_queue(
                 configured_limit=limit,
                 completed_count=completed_count,
                 queued_items=[],
+                mode=queue_mode,
             )
 
         active_entries = list(
@@ -255,7 +427,11 @@ def get_today_queue(
             )
         )
 
-        if missing_slots > 0:
+        if (
+            queue_mode
+            == QueueMode.SMART
+            and missing_slots > 0
+        ):
             # ALL remaining rows for today are intentional:
             #
             # - COMPLETED
@@ -370,7 +546,177 @@ def get_today_queue(
             configured_limit=limit,
             completed_count=completed_count,
             queued_items=queue_items,
+            mode=queue_mode,
         )
+
+
+def add_listings_to_today_queue(
+    listing_ids: list[int],
+    configured_limit: int = DAILY_RELIST_LIMIT,
+    minimum_age_days: int = DEFAULT_MINIMUM_RELIST_AGE_DAYS,
+    today: date | None = None,
+) -> ManualQueueAddResult:
+    """
+    Put specifically selected eligible listings into today's queue.
+
+    Calling this switches today into MANUAL mode.
+
+    Existing queue eligibility rules and the configured daily limit
+    remain authoritative.
+    """
+    target_date = (
+        today
+        or date.today()
+    )
+
+    limit = normalize_daily_limit(
+        configured_limit
+    )
+
+    minimum_age_days = max(
+        0,
+        minimum_age_days,
+    )
+
+    unique_ids = list(
+        dict.fromkeys(
+            listing_ids
+        )
+    )
+
+    result = (
+        ManualQueueAddResult()
+    )
+
+    with session_scope() as session:
+        _reactivate_expired_pauses(
+            session,
+            target_date,
+        )
+
+        _set_queue_mode_in_session(
+            session,
+            target_date=target_date,
+            mode=QueueMode.MANUAL,
+        )
+
+        completed_count = (
+            _completed_count(
+                session,
+                target_date,
+            )
+        )
+
+        existing_rows = list(
+            session.scalars(
+                select(
+                    DailyQueueEntry
+                )
+                .where(
+                    DailyQueueEntry.queue_date
+                    == target_date
+                )
+            ).all()
+        )
+
+        existing_ids = {
+            entry.listing_id
+            for entry
+            in existing_rows
+        }
+
+        queued_count = sum(
+            1
+            for entry
+            in existing_rows
+            if (
+                entry.status
+                == QueueEntryStatus.QUEUED
+            )
+        )
+
+        remaining_slots = max(
+            0,
+            (
+                limit
+                - completed_count
+                - queued_count
+            ),
+        )
+
+        if not unique_ids:
+            return result
+
+        listings = list(
+            session.scalars(
+                select(
+                    Listing
+                )
+                .where(
+                    Listing.id.in_(
+                        unique_ids
+                    )
+                )
+            ).all()
+        )
+
+        listings_by_id = {
+            listing.id: listing
+            for listing
+            in listings
+        }
+
+        for listing_id in unique_ids:
+            if (
+                listing_id
+                in existing_ids
+            ):
+                result.skipped_existing += 1
+                continue
+
+            listing = (
+                listings_by_id.get(
+                    listing_id
+                )
+            )
+
+            if listing is None:
+                result.missing += 1
+                continue
+
+            if not _is_base_eligible(
+                listing,
+                target_date,
+                minimum_age_days,
+            ):
+                result.skipped_ineligible += 1
+                continue
+
+            if remaining_slots <= 0:
+                result.skipped_limit += 1
+                continue
+
+            session.add(
+                DailyQueueEntry(
+                    listing_id=(
+                        listing.id
+                    ),
+                    queue_date=target_date,
+                    status=(
+                        QueueEntryStatus.QUEUED
+                    ),
+                )
+            )
+
+            existing_ids.add(
+                listing.id
+            )
+
+            remaining_slots -= 1
+
+            result.added += 1
+
+    return result
 
 
 def skip_today(
@@ -640,6 +986,89 @@ def _reactivate_expired_pauses(
         )
 
         listing.paused_until = None
+
+
+def is_listing_relist_eligible(
+    listing: Listing,
+    minimum_age_days: int,
+    today: date | None = None,
+) -> bool:
+    """
+    Public read-only wrapper around the queue's eligibility rules.
+
+    Manual selection and Smart Queue therefore use the exact same
+    rules for sold, archived, paused, excluded and too-new items.
+    """
+    target_date = (
+        today
+        or date.today()
+    )
+
+    return _is_base_eligible(
+        listing,
+        target_date,
+        max(
+            0,
+            minimum_age_days,
+        ),
+    )
+
+
+def get_manual_selection_unavailable_ids(
+    today: date | None = None,
+) -> set[int]:
+    """
+    Return listing IDs that should not appear in Choose Listings.
+
+    In SMART mode, current QUEUED rows may still be selected because
+    switching to Manual intentionally replaces those waiting picks.
+
+    COMPLETED and SKIPPED entries are always unavailable.
+
+    In MANUAL mode, existing queued selections are unavailable too.
+    """
+    target_date = (
+        today
+        or date.today()
+    )
+
+    with session_scope() as session:
+        mode = (
+            _get_queue_mode_in_session(
+                session,
+                target_date,
+            )
+        )
+
+        entries = list(
+            session.scalars(
+                select(
+                    DailyQueueEntry
+                )
+                .where(
+                    DailyQueueEntry.queue_date
+                    == target_date
+                )
+            ).all()
+        )
+
+        unavailable: set[int] = set()
+
+        for entry in entries:
+            if (
+                mode
+                == QueueMode.MANUAL
+                or entry.status
+                in (
+                    QueueEntryStatus.COMPLETED,
+                    QueueEntryStatus.SKIPPED,
+                )
+            ):
+                unavailable.add(
+                    entry.listing_id
+                )
+
+        return unavailable
 
 
 def _is_base_eligible(

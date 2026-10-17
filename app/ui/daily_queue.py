@@ -6,6 +6,7 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtWidgets import (
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from app.models import (
     ListingPhoto,
+    QueueMode,
 )
 from app.services.listing_service import (
     get_listing_photos_for_listings,
@@ -37,6 +39,7 @@ from app.services.queue_service import (
     get_today_queue,
     mark_as_relisted,
     skip_today,
+    set_queue_mode,
 )
 from app.ui.components.dialogs.message_dialog import (
     BrandedMessageDialog,
@@ -56,9 +59,6 @@ from app.ui.components.states.photo_fallback import (
 )
 from app.ui.image_cache import (
     get_scaled_pixmap,
-)
-from app.ui.components.dialogs.success_dialog import (
-    BrandedSuccessDialog,
 )
 
 
@@ -613,6 +613,11 @@ class QueueCard(QFrame):
         return layout
 
 
+from app.ui.manual_relist_selector import (
+    ManualRelistSelectorDialog,
+)
+
+
 class DailyQueuePage(QWidget):
     """
     Today's automatically generated manual relisting queue.
@@ -660,6 +665,10 @@ class DailyQueuePage(QWidget):
 
         self._build_summary(
             layout
+        )
+
+        layout.addWidget(
+            self._build_mode_bar()
         )
 
         self.message_label = QLabel(
@@ -730,6 +739,215 @@ class DailyQueuePage(QWidget):
             self.scroll_area,
             1,
         )
+
+    def _build_mode_bar(
+        self,
+    ) -> QWidget:
+        frame = QFrame()
+
+        frame.setObjectName(
+            "informationBox"
+        )
+
+        layout = QHBoxLayout(
+            frame
+        )
+
+        layout.setContentsMargins(
+            14,
+            10,
+            14,
+            10,
+        )
+
+        label = QLabel(
+            "QUEUE MODE"
+        )
+
+        label.setObjectName(
+            "sectionHeading"
+        )
+
+        layout.addWidget(
+            label
+        )
+
+        layout.addSpacing(
+            8
+        )
+
+        self.smart_queue_button = (
+            QPushButton(
+                "SMART QUEUE"
+            )
+        )
+
+        self.smart_queue_button.setMinimumHeight(
+            40
+        )
+
+        self.smart_queue_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        self.smart_queue_button.clicked.connect(
+            self._use_smart_queue
+        )
+
+        self.choose_listings_button = (
+            QPushButton(
+                "CHOOSE LISTINGS"
+            )
+        )
+
+        self.choose_listings_button.setMinimumHeight(
+            40
+        )
+
+        self.choose_listings_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        self.choose_listings_button.clicked.connect(
+            self._choose_listings
+        )
+
+        layout.addWidget(
+            self.smart_queue_button
+        )
+
+        layout.addWidget(
+            self.choose_listings_button
+        )
+
+        layout.addStretch()
+
+        explanation = QLabel(
+            (
+                "Smart fills automatically. "
+                "Choose Listings lets you build today's batch."
+            )
+        )
+
+        explanation.setObjectName(
+            "informationText"
+        )
+
+        explanation.setWordWrap(
+            True
+        )
+
+        layout.addWidget(
+            explanation,
+            1,
+        )
+
+        return frame
+
+    def _set_mode_button_state(
+        self,
+        mode: QueueMode,
+    ) -> None:
+        smart_active = (
+            mode
+            == QueueMode.SMART
+        )
+
+        self.smart_queue_button.setText(
+            (
+                "SMART QUEUE - ACTIVE"
+                if smart_active
+                else "SMART QUEUE"
+            )
+        )
+
+        self.choose_listings_button.setText(
+            (
+                "CHOOSE LISTINGS"
+                if smart_active
+                else "MANUAL QUEUE - ACTIVE"
+            )
+        )
+
+        for button, active in (
+            (
+                self.smart_queue_button,
+                smart_active,
+            ),
+            (
+                self.choose_listings_button,
+                not smart_active,
+            ),
+        ):
+            button.setObjectName(
+                (
+                    "primaryButton"
+                    if active
+                    else "secondaryButton"
+                )
+            )
+
+            style = button.style()
+
+            style.unpolish(
+                button
+            )
+
+            style.polish(
+                button
+            )
+
+    def _use_smart_queue(
+        self,
+    ) -> None:
+        try:
+            set_queue_mode(
+                QueueMode.SMART
+            )
+
+        except Exception as exc:
+            show_logged_error(
+                self,
+                title="Unable to Change Queue Mode",
+                message=(
+                    "Smart Queue could not be enabled."
+                ),
+                context=(
+                    "Unable to switch today's queue "
+                    "to Smart mode"
+                ),
+                exception=exc,
+            )
+
+            return
+
+        self.refresh()
+
+        self.queue_changed.emit()
+
+    def _choose_listings(
+        self,
+    ) -> None:
+        dialog = (
+            ManualRelistSelectorDialog(
+                configured_limit=(
+                    self.daily_limit
+                ),
+                minimum_age_days=(
+                    self.minimum_age_days
+                ),
+                parent=self,
+            )
+        )
+
+        if (
+            dialog.exec()
+            == QDialog.DialogCode.Accepted
+        ):
+            self.refresh()
+
+            self.queue_changed.emit()
+
 
     def _build_summary(
         self,
@@ -955,6 +1173,10 @@ class DailyQueuePage(QWidget):
 
             return
 
+        self._set_mode_button_state(
+            snapshot.mode
+        )
+
         configured_limit = max(
             1,
             snapshot.configured_limit,
@@ -1030,9 +1252,37 @@ class DailyQueuePage(QWidget):
             return
 
         if not snapshot.queued_items:
-            self.message_label.setText(
-                "No eligible listings right now."
-            )
+            if (
+                snapshot.mode
+                == QueueMode.MANUAL
+            ):
+                self.message_label.setText(
+                    "Your manual queue is empty."
+                )
+
+                empty_title = (
+                    "Choose what you want to relist"
+                )
+
+                empty_message = (
+                    "Use Choose Listings above to build "
+                    "today's relisting batch."
+                )
+
+            else:
+                self.message_label.setText(
+                    "No eligible listings right now."
+                )
+
+                empty_title = (
+                    "Nothing needs relisting today"
+                )
+
+                empty_message = (
+                    "None of your active listings currently "
+                    f"meet the {self.minimum_age_days}-day "
+                    "relisting rule. Your shop gets a quiet day."
+                )
 
             self.container.setUpdatesEnabled(
                 False
@@ -1042,14 +1292,8 @@ class DailyQueuePage(QWidget):
                 self._clear_cards()
 
                 self._show_friendly_state(
-                    title=(
-                        "Nothing needs relisting today"
-                    ),
-                    message=(
-                        "None of your active listings currently "
-                        f"meet the {self.minimum_age_days}-day "
-                        "relisting rule. Your shop gets a quiet day."
-                    ),
+                    title=empty_title,
+                    message=empty_message,
                 )
 
             finally:
@@ -1256,27 +1500,6 @@ class DailyQueuePage(QWidget):
         self,
         listing_id: int,
     ) -> None:
-        confirmed = (
-            BrandedMessageDialog.ask(
-                self,
-                title="Mark This Listing as Relisted?",
-                eyebrow="CONFIRM RELIST",
-                message=(
-                    "Only confirm this after you have successfully "
-                    "published the listing on Vinted yourself."
-                ),
-                detail=(
-                    "This records the relist locally, updates its "
-                    "history, and counts it toward today's target."
-                ),
-                confirm_text="YES, RELISTED",
-                cancel_text="NOT YET",
-            )
-        )
-
-        if not confirmed:
-            return
-
         try:
             mark_as_relisted(
                 listing_id=listing_id,
@@ -1295,10 +1518,6 @@ class DailyQueuePage(QWidget):
                 message=str(
                     exc
                 ),
-                detail=(
-                    "Today's queue will refresh using your "
-                    "current relisting settings."
-                ),
             )
 
             self.refresh()
@@ -1311,9 +1530,6 @@ class DailyQueuePage(QWidget):
                 title="Listing Is No Longer Queued",
                 message=str(
                     exc
-                ),
-                detail=(
-                    "Today's queue will now refresh."
                 ),
             )
 
@@ -1337,80 +1553,11 @@ class DailyQueuePage(QWidget):
 
             return
 
-        success_title = (
-            "Relisting recorded"
-        )
-
-        success_message = (
-            "Nice — this listing is now safely recorded "
-            "as relisted."
-        )
-
-        success_detail = (
-            "Your daily progress has been updated."
-        )
-
-        try:
-            snapshot = get_today_queue(
-                configured_limit=(
-                    self.daily_limit
-                ),
-                minimum_age_days=(
-                    self.minimum_age_days
-                ),
-            )
-
-            if snapshot.is_complete:
-                success_title = (
-                    "Today's target is complete"
-                )
-
-                success_message = (
-                    "Lovely — that relisting is recorded "
-                    "and you've reached today's target."
-                )
-
-                success_detail = (
-                    "Your queue can rest until tomorrow."
-                )
-
-            else:
-                remaining = (
-                    snapshot.remaining_completions
-                )
-
-                if remaining == 1:
-                    success_detail = (
-                        "1 relist left before today's target."
-                    )
-
-                else:
-                    success_detail = (
-                        f"{remaining} relists left "
-                        "before today's target."
-                    )
-
-        except Exception as exc:
-            log_background_error(
-                context=(
-                    "Unable to calculate updated queue progress "
-                    f"after relisting listing #{listing_id}"
-                ),
-                exception=exc,
-            )
-
         self.refresh()
 
         self.queue_changed.emit()
 
-        dialog = BrandedSuccessDialog(
-            title=success_title,
-            message=success_message,
-            detail=success_detail,
-            parent=self,
-        )
 
-        dialog.exec()
 
     # =====================================================
     # Friendly / error states

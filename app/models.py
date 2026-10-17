@@ -46,6 +46,11 @@ class QueueEntryStatus(str, Enum):
     SKIPPED = "skipped"
 
 
+class QueueMode(str, Enum):
+    SMART = "smart"
+    MANUAL = "manual"
+
+
 listing_tags = Table(
     "listing_tags",
     Base.metadata,
@@ -365,6 +370,57 @@ class ListingPhoto(Base):
 
     listing: Mapped["Listing"] = relationship(
         back_populates="photos",
+    )
+
+
+class DailyQueuePreference(Base):
+    """
+    Stores how one day's relisting queue should be populated.
+
+    SMART automatically fills eligible slots.
+    MANUAL only contains listings explicitly chosen by the user.
+    """
+
+    __tablename__ = "daily_queue_preferences"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "queue_date",
+            name="uq_daily_queue_preference_date",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    queue_date: Mapped[date] = mapped_column(
+        Date,
+        nullable=False,
+        index=True,
+    )
+
+    mode: Mapped[QueueMode] = mapped_column(
+        SQLEnum(
+            QueueMode,
+            native_enum=False,
+            values_callable=lambda enum_class: [
+                item.value
+                for item
+                in enum_class
+            ],
+        ),
+        nullable=False,
+        default=QueueMode.SMART,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
     )
 
 

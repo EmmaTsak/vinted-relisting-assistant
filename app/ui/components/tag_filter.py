@@ -5,13 +5,13 @@ from PySide6.QtCore import (
 )
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QMenu,
-    QPushButton,
     QWidgetAction,
 )
 
 
-class TagFilterButton(QPushButton):
+class TagFilterButton(QComboBox):
     """
     Compact multi-select filter for listing tags.
 
@@ -39,11 +39,31 @@ class TagFilterButton(QPushButton):
             self
         )
 
-        self.setMenu(
-            self._tag_menu
+        self._update_text()
+
+    def showPopup(
+        self,
+    ) -> None:
+        """
+        Show the existing multi-select checkbox menu while this
+        widget itself is painted and styled as a normal QComboBox.
+        """
+        self._tag_menu.setMinimumWidth(
+            self.width()
         )
 
-        self._update_text()
+        popup_position = self.mapToGlobal(
+            self.rect().bottomLeft()
+        )
+
+        self._tag_menu.popup(
+            popup_position
+        )
+
+    def hidePopup(
+        self,
+    ) -> None:
+        self._tag_menu.hide()
 
     def selected_tags(
         self,
@@ -222,6 +242,32 @@ class TagFilterButton(QPushButton):
                 f"Tags ({count})"
             )
 
-        self.setText(
-            text
+        self.blockSignals(
+            True
+        )
+
+        try:
+            self.clear()
+
+            self.addItem(
+                text
+            )
+
+            self.setCurrentIndex(
+                0
+            )
+
+        finally:
+            self.blockSignals(
+                False
+            )
+
+        self.setToolTip(
+            (
+                ", ".join(
+                    self.selected_tags()
+                )
+                if self._selected
+                else ""
+            )
         )

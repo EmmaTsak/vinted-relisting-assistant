@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from PySide6.QtCore import (
+    QObject,
+    QThread,
+    QTimer,
     Qt,
     Signal,
+    Slot,
 )
 from PySide6.QtGui import (
     QIntValidator,
@@ -16,6 +20,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -43,6 +48,33 @@ from app.ui.components.dialogs.message_dialog import (
 from app.ui.theme import (
     apply_theme,
 )
+
+
+class _SettingsBackupWorker(QObject):
+    """
+    Run the slow filesystem backup outside the GUI thread.
+    """
+
+    completed = Signal(object)
+    failed = Signal(object)
+
+    @Slot()
+    def run(
+        self,
+    ) -> None:
+        try:
+            backup = create_backup()
+
+        except Exception as exc:
+            self.failed.emit(
+                exc
+            )
+
+            return
+
+        self.completed.emit(
+            backup
+        )
 
 
 class NoWheelComboBox(QComboBox):
@@ -78,6 +110,20 @@ class SettingsPage(QWidget):
         super().__init__(
             parent
         )
+
+        self._backup_thread: (
+            QThread | None
+        ) = None
+
+        self._backup_worker: (
+            _SettingsBackupWorker | None
+        ) = None
+
+        self._backup_result = None
+
+        self._backup_error: (
+            Exception | None
+        ) = None
 
         self._build_ui()
         self._apply_styles()
@@ -605,54 +651,106 @@ class SettingsPage(QWidget):
             QHBoxLayout()
         )
 
-        create_backup_button = (
+        self.create_backup_button = (
             QPushButton(
                 "CREATE BACKUP"
             )
         )
 
-        create_backup_button.setObjectName(
+        self.create_backup_button.setObjectName(
             "primaryButton"
         )
 
-        create_backup_button.setMinimumHeight(
+        self.create_backup_button.setMinimumHeight(
             self.BUTTON_HEIGHT
         )
 
-        create_backup_button.clicked.connect(
+        self.create_backup_button.clicked.connect(
             self._create_backup
         )
 
-        manage_backups_button = (
+        self.manage_backups_button = (
             QPushButton(
                 "MANAGE / RESTORE BACKUPS"
             )
         )
 
-        manage_backups_button.setObjectName(
+        self.manage_backups_button.setObjectName(
             "secondaryButton"
         )
 
-        manage_backups_button.setMinimumHeight(
+        self.manage_backups_button.setMinimumHeight(
             self.BUTTON_HEIGHT
         )
 
-        manage_backups_button.clicked.connect(
+        self.manage_backups_button.clicked.connect(
             self._open_backup_manager
         )
 
         backup_buttons.addWidget(
-            create_backup_button
+            self.create_backup_button
         )
 
         backup_buttons.addWidget(
-            manage_backups_button
+            self.manage_backups_button
         )
 
         backup_buttons.addStretch()
 
         backup_frame_layout.addLayout(
             backup_buttons
+        )
+
+        self.backup_status_label = QLabel(
+            ""
+        )
+
+        self.backup_status_label.setObjectName(
+            "settingsNoteText"
+        )
+
+        self.backup_status_label.setWordWrap(
+            True
+        )
+
+        self.backup_status_label.setVisible(
+            False
+        )
+
+        backup_frame_layout.addWidget(
+            self.backup_status_label
+        )
+
+        self.backup_progress = (
+            QProgressBar()
+        )
+
+        # Indeterminate progress:
+        # we know work is happening, but copying speed depends
+        # on photo count, disk and backup destination.
+        self.backup_progress.setRange(
+            0,
+            0,
+        )
+
+        self.backup_progress.setTextVisible(
+            False
+        )
+
+        self.backup_progress.setMinimumHeight(
+            8
+        )
+
+        self.backup_progress.setMaximumHeight(
+            8
+        )
+
+        self.backup_progress.setVisible(
+            False
+        )
+
+        backup_frame_layout.addWidget(
+            self.backup_progress
         )
 
         content_layout.addWidget(
@@ -981,6 +1079,12 @@ class SettingsPage(QWidget):
     def _create_backup(
         self,
     ) -> None:
+        if (
+            self._backup_thread
+            is not None
+        ):
+            return
+
         new_settings = (
             self._build_settings()
         )
@@ -988,6 +1092,9 @@ class SettingsPage(QWidget):
         if new_settings is None:
             return
 
+        # Save the current backup directory/settings first.
+        # This part is small and must finish before the worker
+        # reads the settings.
         try:
             saved = save_settings(
                 new_settings
@@ -1005,11 +1112,184 @@ class SettingsPage(QWidget):
                 saved
             )
 
-            backup = (
-                create_backup()
+        except Exception as exc:
+            show_logged_error(
+                self,
+                title="Backup Failed",
+                message=(
+                    "Your settings could not be saved "
+                    "before creating the backup."
+                ),
+                context=(
+                    "Unable to prepare Settings backup"
+                ),
+                exception=exc,
             )
 
-        except Exception as exc:
+            return
+
+        self._backup_result = None
+        self._backup_error = None
+
+        # IMPORTANT:
+        # Show feedback BEFORE launching any backup work.
+        self.create_backup_button.setText(
+            "CREATING BACKUP..."
+        )
+
+        self.create_backup_button.setEnabled(
+            False
+        )
+
+        self.manage_backups_button.setEnabled(
+            False
+        )
+
+        self.backup_status_label.setText(
+            (
+                "Creating backup...\n"
+                "Copying your database, settings and "
+                "managed listing photos. This may take "
+                "a moment for a large photo library."
+            )
+        )
+
+        self.backup_status_label.setVisible(
+            True
+        )
+
+        self.backup_progress.setVisible(
+            True
+        )
+
+        # Do not start the worker during the same click event.
+        # Give Qt time to physically paint the new UI first.
+        QTimer.singleShot(
+            150,
+            self._start_backup_worker,
+        )
+
+    def _start_backup_worker(
+        self,
+    ) -> None:
+        if (
+            self._backup_thread
+            is not None
+        ):
+            return
+
+        thread = QThread(
+            self
+        )
+
+        worker = (
+            _SettingsBackupWorker()
+        )
+
+        worker.moveToThread(
+            thread
+        )
+
+        thread.started.connect(
+            worker.run
+        )
+
+        worker.completed.connect(
+            self._backup_completed
+        )
+
+        worker.failed.connect(
+            self._backup_failed
+        )
+
+        worker.completed.connect(
+            thread.quit
+        )
+
+        worker.failed.connect(
+            thread.quit
+        )
+
+        worker.completed.connect(
+            worker.deleteLater
+        )
+
+        worker.failed.connect(
+            worker.deleteLater
+        )
+
+        thread.finished.connect(
+            self._backup_thread_finished
+        )
+
+        thread.finished.connect(
+            thread.deleteLater
+        )
+
+        self._backup_thread = (
+            thread
+        )
+
+        self._backup_worker = (
+            worker
+        )
+
+        thread.start()
+
+    @Slot(object)
+    def _backup_completed(
+        self,
+        backup,
+    ) -> None:
+        self._backup_result = backup
+
+        self.backup_status_label.setText(
+            "Backup created. Finishing up..."
+        )
+
+    @Slot(object)
+    def _backup_failed(
+        self,
+        exc: Exception,
+    ) -> None:
+        self._backup_error = exc
+
+    @Slot()
+    def _backup_thread_finished(
+        self,
+    ) -> None:
+        backup = (
+            self._backup_result
+        )
+
+        error = (
+            self._backup_error
+        )
+
+        self._backup_thread = None
+        self._backup_worker = None
+
+        self.create_backup_button.setText(
+            "CREATE BACKUP"
+        )
+
+        self.create_backup_button.setEnabled(
+            True
+        )
+
+        self.manage_backups_button.setEnabled(
+            True
+        )
+
+        self.backup_progress.setVisible(
+            False
+        )
+
+        if error is not None:
+            self.backup_status_label.setText(
+                "Backup failed."
+            )
+
             show_logged_error(
                 self,
                 title="Backup Failed",
@@ -1019,10 +1299,25 @@ class SettingsPage(QWidget):
                 context=(
                     "Unable to create backup from Settings"
                 ),
-                exception=exc,
+                exception=error,
             )
 
             return
+
+        if backup is None:
+            self.backup_status_label.setText(
+                "Backup did not complete."
+            )
+
+            return
+
+        self.backup_status_label.setText(
+            (
+                "Backup created successfully. "
+                f"{backup.photo_count} photo(s) copied, "
+                f"{backup.total_size_mb:.2f} MB."
+            )
+        )
 
         message = (
             "Backup created successfully.\n\n"
@@ -1042,6 +1337,7 @@ class SettingsPage(QWidget):
             title="Backup Created",
             message=message,
         )
+
 
     def _open_backup_manager(
         self,
