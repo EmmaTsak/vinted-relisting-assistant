@@ -48,6 +48,8 @@ class ListingBrowserFilters:
     category: str | None = None
     brand: str | None = None
 
+    tags: tuple[str, ...] = ()
+
     subcategory: str | None = None
     condition: str | None = None
     size: str | None = None
@@ -93,6 +95,10 @@ class ListingBrowserResult:
     )
 
     colours: list[str] = field(
+        default_factory=list
+    )
+
+    tags: list[str] = field(
         default_factory=list
     )
 
@@ -143,6 +149,10 @@ def get_listing_browser_result(
         "colour",
     )
 
+    tags = _unique_tag_values(
+        all_listings
+    )
+
     filtered = [
         listing
         for listing in all_listings
@@ -172,6 +182,7 @@ def get_listing_browser_result(
         conditions=conditions,
         sizes=sizes,
         colours=colours,
+        tags=tags,
     )
 
 
@@ -213,6 +224,28 @@ def _unique_values(
     )
 
 
+def _unique_tag_values(
+    listings: list[Listing],
+) -> list[str]:
+    """
+    Return every tag currently attached to at least one listing.
+    """
+    values = {
+        tag.name.strip()
+        for listing in listings
+        for tag in listing.tags
+        if (
+            tag.name
+            and tag.name.strip()
+        )
+    }
+
+    return sorted(
+        values,
+        key=str.casefold,
+    )
+
+
 def _matches_filters(
     listing: Listing,
     filters: ListingBrowserFilters,
@@ -240,6 +273,11 @@ def _matches_filters(
             listing.material,
             listing.parcel_size,
             listing.isbn,
+            *(
+                tag.name
+                for tag
+                in listing.tags
+            ),
         ]
 
         searchable_text = " ".join(
@@ -297,6 +335,29 @@ def _matches_filters(
         filters.brand,
     ):
         return False
+
+    requested_tags = {
+        value.strip().casefold()
+        for value in filters.tags
+        if value.strip()
+    }
+
+    if requested_tags:
+        listing_tags = {
+            tag.name.strip().casefold()
+            for tag in listing.tags
+            if (
+                tag.name
+                and tag.name.strip()
+            )
+        }
+
+        # Multi-select tags use ANY matching:
+        # Winter + Christmas means Winter OR Christmas.
+        if listing_tags.isdisjoint(
+            requested_tags
+        ):
+            return False
 
     if not _matches_text_filter(
         listing.condition,

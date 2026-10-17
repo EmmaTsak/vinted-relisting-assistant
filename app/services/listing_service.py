@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.database import (
     session_scope,
@@ -543,6 +544,11 @@ def get_all_listings() -> list[Listing]:
         statement = (
             select(
                 Listing
+            )
+            .options(
+                selectinload(
+                    Listing.tags
+                )
             )
             .order_by(
                 Listing.id.desc()

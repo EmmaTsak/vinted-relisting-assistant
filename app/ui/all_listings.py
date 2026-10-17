@@ -70,6 +70,13 @@ from PySide6.QtGui import (
 from app.ui.category_manager import (
     CategoryManagerDialog,
 )
+from app.ui.tag_manager import (
+    TagManagerDialog,
+)
+from app.ui.components.tag_filter import (
+    TagFilterButton,
+)
+
 
 class AllListingsPage(QWidget):
     """
@@ -312,7 +319,7 @@ class AllListingsPage(QWidget):
         self.search_input.setPlaceholderText(
             (
                 "Search title, ISBN, description, "
-                "brand, category, size, colour..."
+                "brand, category, tags, size, colour..."
             )
         )
 
@@ -656,6 +663,12 @@ class AllListingsPage(QWidget):
             self._filter_changed
         )
 
+        self.tag_filter = TagFilterButton()
+
+        self.tag_filter.selection_changed.connect(
+            self._filter_changed
+        )
+
         # Row 3 -------------------------------------------------
 
         self.size_filter = (
@@ -726,6 +739,49 @@ class AllListingsPage(QWidget):
             self._price_filter_changed
         )
 
+        self.price_range_filter = QWidget()
+
+        price_range_layout = QHBoxLayout(
+            self.price_range_filter
+        )
+
+        price_range_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        price_range_layout.setSpacing(
+            8
+        )
+
+        price_range_layout.addWidget(
+            self.minimum_price_filter,
+            1,
+        )
+
+        price_separator = QLabel(
+            "to"
+        )
+
+        price_separator.setObjectName(
+            "filterLabel"
+        )
+
+        price_separator.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+
+        price_range_layout.addWidget(
+            price_separator
+        )
+
+        price_range_layout.addWidget(
+            self.maximum_price_filter,
+            1,
+        )
+
         # Layout ------------------------------------------------
 
         self._add_filter_control(
@@ -780,14 +836,22 @@ class AllListingsPage(QWidget):
             grid,
             1,
             2,
-            "Brand",
-            self.brand_filter,
+            "Tags",
+            self.tag_filter,
         )
 
         self._add_filter_control(
             grid,
             1,
             3,
+            "Brand",
+            self.brand_filter,
+        )
+
+        self._add_filter_control(
+            grid,
+            2,
+            0,
             "Condition",
             self.condition_filter,
         )
@@ -795,7 +859,7 @@ class AllListingsPage(QWidget):
         self._add_filter_control(
             grid,
             2,
-            0,
+            1,
             "Size",
             self.size_filter,
         )
@@ -803,7 +867,7 @@ class AllListingsPage(QWidget):
         self._add_filter_control(
             grid,
             2,
-            1,
+            2,
             "Colour",
             self.colour_filter,
         )
@@ -811,17 +875,9 @@ class AllListingsPage(QWidget):
         self._add_filter_control(
             grid,
             2,
-            2,
-            "Minimum Price",
-            self.minimum_price_filter,
-        )
-
-        self._add_filter_control(
-            grid,
-            2,
             3,
-            "Maximum Price",
-            self.maximum_price_filter,
+            "Price Range",
+            self.price_range_filter,
         )
 
         for column in range(
@@ -1052,6 +1108,22 @@ class AllListingsPage(QWidget):
         # instead of beneath filter_panel in the normal widget
         # hierarchy. Explicitly treat those popup windows as
         # part of the filter interaction.
+        tag_menu = (
+            self.tag_filter.menu_widget()
+        )
+
+        if self._is_widget_within(
+            widget,
+            tag_menu,
+        ):
+            return True
+
+        if (
+            widget.window()
+            is tag_menu.window()
+        ):
+            return True
+
         for combo in (
             self._filter_combo_boxes()
         ):
@@ -1202,6 +1274,9 @@ class AllListingsPage(QWidget):
                 is not None
             ):
                 count += 1
+
+        if self.tag_filter.selected_tags():
+            count += 1
 
         if (
             self.minimum_price_filter.value()
@@ -1386,6 +1461,7 @@ class AllListingsPage(QWidget):
             conditions=result.conditions,
             sizes=result.sizes,
             colours=result.colours,
+            tags=result.tags,
         )
 
         page_size = int(
@@ -1699,6 +1775,9 @@ class AllListingsPage(QWidget):
             brand=(
                 self.brand_filter.currentData()
             ),
+            tags=tuple(
+                self.tag_filter.selected_tags()
+            ),
             condition=(
                 self.condition_filter.currentData()
             ),
@@ -1724,6 +1803,7 @@ class AllListingsPage(QWidget):
         conditions: list[str],
         sizes: list[str],
         colours: list[str],
+        tags: list[str],
     ) -> None:
         """
         Refresh dropdown options while preserving current selections.
@@ -1823,6 +1903,10 @@ class AllListingsPage(QWidget):
 
             self._updating_filter_options = False
 
+        self.tag_filter.set_options(
+            tags
+        )
+
         self._update_filter_button_text()
 
     def _reset_filters(
@@ -1875,6 +1959,8 @@ class AllListingsPage(QWidget):
             self.colour_filter.setCurrentIndex(
                 0
             )
+
+            self.tag_filter.clear_selection()
 
             self.minimum_price_filter.setValue(
                 0
@@ -2052,7 +2138,7 @@ class AllListingsPage(QWidget):
         )
 
         heading = QLabel(
-            "CATEGORIES"
+            "CATEGORIES & TAGS"
         )
 
         heading.setObjectName(
@@ -2117,8 +2203,33 @@ class AllListingsPage(QWidget):
             category_button
         )
 
+        tag_button = QPushButton(
+            "BULK TAGS"
+        )
 
+        tag_button.setObjectName(
+            "secondaryButton"
+        )
 
+        tag_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        tag_button.setMinimumHeight(
+            36
+        )
+
+        tag_button.setMinimumWidth(
+            130
+        )
+
+        tag_button.clicked.connect(
+            self._open_tag_manager
+        )
+
+        layout.addWidget(
+            tag_button
+        )
 
         page_layout = self.layout()
 
@@ -2149,7 +2260,7 @@ class AllListingsPage(QWidget):
         self.search_input.setPlaceholderText(
             (
                 "Search listings by title, ISBN, brand, "
-                "category, size, colour..."
+                "category, tags, size, colour..."
             )
         )
 
@@ -2184,6 +2295,10 @@ class AllListingsPage(QWidget):
             self.condition_filter,
             self.size_filter,
             self.colour_filter,
+        )
+
+        self.tag_filter.setMinimumHeight(
+            self.CONTROL_HEIGHT
         )
 
         for combo in combo_filters:
@@ -2324,6 +2439,26 @@ class AllListingsPage(QWidget):
         )
 
         dialog.exec()
+
+    def _open_tag_manager(
+        self,
+    ) -> None:
+        dialog = TagManagerDialog(
+            parent=self
+        )
+
+        dialog.tags_changed.connect(
+            self._tags_changed
+        )
+
+        dialog.exec()
+
+    def _tags_changed(
+        self,
+    ) -> None:
+        self.current_page = 1
+
+        self.refresh()
 
     def _categories_changed(
         self,

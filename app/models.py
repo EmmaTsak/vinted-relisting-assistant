@@ -6,6 +6,7 @@ from enum import Enum
 
 from sqlalchemy import (
     Boolean,
+    Column,
     Date,
     DateTime,
     Enum as SQLEnum,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Table,
     Text,
     UniqueConstraint,
 )
@@ -42,6 +44,66 @@ class QueueEntryStatus(str, Enum):
     QUEUED = "queued"
     COMPLETED = "completed"
     SKIPPED = "skipped"
+
+
+listing_tags = Table(
+    "listing_tags",
+    Base.metadata,
+    Column(
+        "listing_id",
+        ForeignKey(
+            "listings.id",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+    ),
+    Column(
+        "tag_id",
+        ForeignKey(
+            "tags.id",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+    ),
+)
+
+
+class Tag(Base):
+    """
+    Flexible user-defined label that can be attached to
+    any number of listings.
+    """
+
+    __tablename__ = "tags"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+    )
+
+    normalized_name: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+    )
+
+    listings: Mapped[list["Listing"]] = relationship(
+        secondary=listing_tags,
+        back_populates="tags",
+    )
 
 
 class Listing(Base):
@@ -231,6 +293,13 @@ class Listing(Base):
         back_populates="listing",
         cascade="all, delete-orphan",
         order_by="ListingPhoto.display_order",
+    )
+
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary=listing_tags,
+        back_populates="listings",
+        order_by="Tag.name",
+        lazy="selectin",
     )
 
     def __repr__(self) -> str:
